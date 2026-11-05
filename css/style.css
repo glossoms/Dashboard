@@ -341,10 +341,8 @@ body.splashing{overflow:hidden}
 .experience-total strong{color:var(--ink);font-size:clamp(28px,4vw,42px);line-height:1;font-weight:700;letter-spacing:-.045em;font-variant-numeric:tabular-nums}
 .experience-total strong+span{margin-right:5px}
 .experience-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px;align-items:stretch}
-.experience-card{position:relative;min-width:0;padding:15px 38px 14px 15px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--bg) 70%,transparent)}
+.experience-card{position:relative;display:flex;align-items:center;min-width:0;min-height:62px;padding:14px 38px 14px 15px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--bg) 70%,transparent)}
 .experience-game-name{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.experience-game-stats{display:flex;flex-wrap:wrap;gap:7px 16px;margin-top:10px;color:var(--mute);font-size:11px}
-.experience-game-stats b{color:var(--ink);font-size:13px;font-variant-numeric:tabular-nums}
 .experience-remove{position:absolute;top:8px;right:8px;width:25px;height:25px;border:0;border-radius:50%;background:transparent;color:var(--mute);font-size:20px;line-height:1;opacity:0;cursor:pointer;transition:opacity .2s,background .2s,color .2s}
 .experience-card:hover .experience-remove,.experience-remove:focus-visible{opacity:1}
 .experience-remove:hover{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red)}
