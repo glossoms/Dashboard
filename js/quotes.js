@@ -1,38 +1,45 @@
-/* Quote of the day. Pulls a few random quotes from the open-source DummyJSON API, scores them for
-   "depth" (length + reflective keywords) and keeps the best. Falls back to a curated list offline. */
+/* Short, curated lines used for the daily quote and the morning intro. */
 (function (root) {
-  const LOCAL = [
-    ['The impediment to action advances action. What stands in the way becomes the way.', 'Marcus Aurelius'],
-    ['It is not that we have a short time to live, but that we waste a lot of it.', 'Seneca'],
-    ['Begin at once to live, and count each separate day as a separate life.', 'Seneca'],
-    ['Waste no more time arguing what a good man should be. Be one.', 'Marcus Aurelius'],
-    ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
-    ['The unexamined life is not worth living.', 'Socrates'],
-    ['I learned that courage was not the absence of fear, but the triumph over it.', 'Nelson Mandela'],
-    ['The only way to do great work is to love what you do.', 'Steve Jobs'],
-    ['The best way out is always through.', 'Robert Frost'],
-    ['To live is the rarest thing in the world. Most people exist, that is all.', 'Oscar Wilde'],
-    ['Not all those who wander are lost.', 'J.R.R. Tolkien'],
+  const LINES = [
+    ['Begin again.', 'Unknown'],
+    ['Make it count.', 'Unknown'],
+    ['Small steps. Every day.', 'Unknown'],
+    ['Do the next right thing.', 'Unknown'],
+    ['Start where you are.', 'Arthur Ashe'],
+    ['Action is the antidote to despair.', 'Joan Baez'],
     ['Well begun is half done.', 'Aristotle'],
-    ['A journey of a thousand miles begins with a single step.', 'Lao Tzu'],
-    ['A smooth sea never made a skilled sailor.', 'Proverb']
+    ['Fortune favors the bold.', 'Virgil'],
+    ['Nothing will work unless you do.', 'Maya Angelou'],
+    ['Great things are done by a series of small things brought together.', 'Vincent van Gogh'],
+    ['The secret of getting ahead is getting started.', 'Mark Twain'],
+    ['Energy and persistence conquer all things.', 'Benjamin Franklin'],
+    ['You do not have to see the whole staircase. Just take the first step.', 'Martin Luther King Jr.'],
+    ['It always seems impossible until it is done.', 'Nelson Mandela'],
+    ['The beginning is the most important part of the work.', 'Plato'],
+    ['Well done is better than well said.', 'Benjamin Franklin'],
+    ['Dream big. Start small. Act now.', 'Robin Sharma'],
+    ['Great acts are made up of small deeds.', 'Lao Tzu'],
+    ['Amateurs wait for inspiration. The rest of us just get up and go to work.', 'Chuck Close'],
+    ['Do what you can, with what you have, where you are.', 'Theodore Roosevelt'],
+    ['Discipline is choosing what you want most over what you want now.', 'Unknown'],
+    ['One day or day one. You decide.', 'Unknown'],
+    ['You are allowed to be a beginner.', 'Unknown'],
+    ['Progress, not perfection.', 'Unknown'],
+    ['Nothing changes if nothing changes.', 'Unknown'],
+    ['Focus on the step in front of you, not the whole staircase.', 'Unknown'],
+    ['Work in silence. Let progress make the noise.', 'Unknown'],
+    ['You have made it through every hard day so far.', 'Unknown'],
+    ['The future depends on what you do today.', 'Mahatma Gandhi'],
+    ['Be where your feet are.', 'Unknown']
   ];
-  const DEEP = /\b(life|time|mind|soul|truth|meaning|courage|fear|death|freedom|wisdom|purpose|silence|patience|habit|dream|become|nothing|everything|journey|moment)\b/i;
   const hash = s => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
-  const score = q => (DEEP.test(q.text) ? 3 : 0) + Math.min(q.text.length, 160) / 40 - (q.text.length > 220 ? 10 : 0);
-  const local = seed => { const [text, author] = LOCAL[hash(seed) % LOCAL.length]; return { text, author, source: 'local' }; };
-
-  async function one(timeout) {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), timeout);
-    try {
-      const j = await (await fetch('https://dummyjson.com/quotes/random', { signal: ctl.signal })).json();
-      return j && j.quote ? { text: j.quote, author: j.author || 'Unknown', source: 'dummyjson' } : null;
-    } catch (e) { return null; } finally { clearTimeout(t); }
+  const asQuote = entry => ({ text: entry[0], author: entry[1], source: 'curated' });
+  function get(seed) { return Promise.resolve(asQuote(LINES[hash(seed) % LINES.length])); }
+  function next(seed, current) {
+    const currentText = typeof current === 'string' ? current : current && current.text;
+    let i = hash(seed + ':' + Date.now()) % LINES.length;
+    if (LINES[i][0] === currentText) i = (i + 1) % LINES.length;
+    return Promise.resolve(asQuote(LINES[i]));
   }
-  /** Resolves to the deepest of a few random quotes, or a curated local one. Never rejects. */
-  async function get(seed, timeout = 2800) {
-    const got = (await Promise.all([one(timeout), one(timeout), one(timeout)])).filter(Boolean);
-    return got.length ? got.sort((a, b) => score(b) - score(a))[0] : local(seed + Math.random());
-  }
-  root.Quotes = { get, local, score };
+  root.Quotes = { get, next, local: seed => asQuote(LINES[hash(seed) % LINES.length]) };
 })(window);

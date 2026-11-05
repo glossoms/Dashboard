@@ -355,7 +355,8 @@
     deltodo: id => { state.todos = state.todos.filter(x => x.id !== id); persist(); render(false); },
     delevent: id => { state.events = state.events.filter(x => x.id !== id); persist(); render(false); },
     importics: () => $('#icsFile').click(),
-    newquote: async () => { const r = await Quotes.get(G.today()); state.quote = { date: G.today(), text: r.text, author: r.author }; persist(); if (view === 'today') render(false); },
+    newquote: async () => { const r = await Quotes.next(G.today(), state.quote); state.quote = { date: G.today(), text: r.text, author: r.author }; persist(); if (view === 'today') render(false); },
+    endtoday: () => showDaySplash('recap'),
     addclient: () => openClient(),
     editclient: id => openClient(id),
     toggleclient: id => { openClientId = openClientId === id ? null : id; render(false); },
@@ -519,7 +520,8 @@
     return `<section class="today-head rise"><div><div class="eyebrow">${longDate(now)}</div><h1>${greet(now)}</h1></div><div class="today-heading-tools"><button class="icon layout-toggle" data-act="layoutmode" aria-label="Customize Today page" title="Customize Today page">${icon('edit')}</button></div></section>
       ${running.length ? `<section class="live card rise"><span class="pulse"></span><div class="grow"><div class="muted">Working on${running.length > 1 ? ` · +${running.length - 1} more` : ''}</div><div class="name">${esc(running[0].title)}</div></div><span class="time" data-timer="${running[0].id}">${clock(G.taskElapsed(running[0], nowMs))}</span><button class="icon live" data-act="pause" data-id="${running[0].id}" aria-label="Pause">${icon('pause')}</button></section>` : ''}
       <div class="today-layout">${ordered(widgets).map(w => `<div class="today-widget" data-widget="${w.id}" draggable="false"><button class="widget-remove" data-act="togglewidget" data-id="${w.id}" aria-label="Hide ${w.label}">−</button>${w.html}</div>`).join('')}</div>
-      <div class="widget-picker" aria-label="Hidden Today sections"></div>`;
+      <div class="widget-picker" aria-label="Hidden Today sections"></div>
+      <div class="day-end"><span class="muted">That’s everything for today?</span><button class="btn ghost" data-act="endtoday">End today <span aria-hidden="true">↗</span></button></div>`;
   }
 
   let layoutEditing = false, holdTimer = null;
@@ -630,28 +632,66 @@
     state.name = name; persist(); syncBrand(); welcomeDlg.close();
     if (welcomeFirstRun) { welcomeFirstRun = false; startSplash(); }
   });
-  let splashClose = null;
-  async function startSplash() {
-    const sp = $('#splash'), day = G.today();
-    if (state.lastSplash === day) return;
-    $('#spDate').textContent = longDate(); $('#spGreet').textContent = greet();
-    $('#spQuote').innerHTML = '<span class="sk"></span>'; $('#spAuthor').textContent = '';
-    sp.hidden = false; document.body.classList.add('splashing');
-    let timer = null, closed = false;
-    splashClose = () => {
-      if (closed) return; closed = true; clearTimeout(timer); splashClose = null;
-      state.lastSplash = day; persist(); Sound.play('done'); sp.classList.add('out');
-      setTimeout(() => { sp.hidden = true; sp.classList.remove('out'); document.body.classList.remove('splashing'); render(); }, 650);
-    };
-    $('#spGo').onclick = () => splashClose && splashClose();
-    let q = state.quote && state.quote.date === day ? state.quote : null;
-    if (!q) { const r = await Quotes.get(day); q = { date: day, text: r.text, author: r.author }; state.quote = q; persist(); }
-    if (closed) return;
-    $('#spQuote').innerHTML = q.text.split(/\s+/).map((w, i) => `<span class="w" style="--i:${i}">${esc(w)} </span>`).join('');
-    $('#spAuthor').textContent = '— ' + q.author; $('#spAuthor').classList.add('in');
-    $('#spBar').style.animation = 'spbar 10s linear forwards'; timer = setTimeout(() => splashClose && splashClose(), 10000);
+  let splashMode = null;
+  function splashGroup(title, items, emptyText, crossed) {
+    const rows = items.map((item, i) => '<li class="sp-row ' + (crossed ? 'recap-row' : '') + '" style="--row:' + i + '"><i class="sp-dot">' + (crossed ? '✓' : '') + '</i><span>' + item + '</span></li>').join('');
+    return '<div class="sp-group"><div class="sp-group-title">' + title + '<span>' + items.length + '</span></div>' + (rows ? '<ul class="sp-list">' + rows + '</ul>' : '<p class="sp-empty">' + emptyText + '</p>') + '</div>';
   }
-  document.addEventListener('keydown', e => { if (splashClose && (e.key === 'Enter' || e.key === 'Escape')) splashClose(); });
+  function morningBrief(day) {
+    const todos = G.todosFor(state.todos, day).sort((a, b) => (a.done - b.done) || (a.created - b.created));
+    const due = state.tasks.filter(t => t.deadline).sort((a, b) => a.deadline - b.deadline);
+    const events = G.eventsOn(state.events, day).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const todoRows = todos.map(t => (t.done ? '✓ ' : '') + esc(t.title));
+    const dueRows = due.map(t => esc(t.title) + ' <small>· ' + esc(dueInfo(t.deadline, Date.now()).text) + '</small>');
+    const eventRows = events.map(e => (e.time ? esc(e.time) + ' · ' : '') + esc(e.title));
+    const note = (state.notes[day] || '').trim();
+    return '<div class="sp-brief-title">A little room to focus.</div><div class="sp-groups">' +
+      splashGroup('Your checklist', todoRows, 'Nothing on your checklist yet') +
+      splashGroup('Deadlines', dueRows, 'Nothing due right now') +
+      splashGroup('On your calendar', eventRows, 'Your schedule is clear') +
+      '</div>' + (note ? '<div class="sp-note"><span>Today’s note</span><p>' + esc(note) + '</p></div>' : '');
+  }
+  function recapBrief(day) {
+    const todos = G.todosFor(state.todos, day).sort((a, b) => (a.created || 0) - (b.created || 0));
+    const done = todos.filter(t => t.done).map(t => esc(t.title));
+    const open = todos.filter(t => !t.done).map(t => esc(t.title));
+    const work = state.awaiting.filter(x => (x.finishedDate || '') === day).map(x => esc(x.name));
+    state.percentages.forEach(x => (x.works || []).forEach(w => { if (w.finishedAt && G.today(new Date(w.finishedAt)) === day) work.push(esc(w.name)); }));
+    const note = (state.notes[day] || '').trim() || 'Add a quick win, thought, or reminder on the Today page.';
+    return '<div class="sp-brief-title">' + (done.length ? 'You moved ' + done.length + ' thing' + (done.length === 1 ? '' : 's') + ' forward.' : 'A day still counts, even when it’s unfinished.') + '</div><div class="sp-groups">' +
+      splashGroup('Done today', done, 'Your checklist is still waiting for its first win', true) +
+      splashGroup('Still on your list', open, 'Your checklist is clear') +
+      splashGroup('Work finished', work, 'No completed work logged today', true) +
+      '</div><div class="sp-note"><span>Today’s note</span><p>' + esc(note) + '</p></div>';
+  }
+  function dismissSplash() {
+    const sp = $('#splash');
+    if (sp.hidden) return;
+    if (splashMode === 'morning') { state.lastSplash = G.today(); persist(); }
+    splashMode = null; Sound.play('done'); sp.classList.add('out');
+    setTimeout(() => { sp.hidden = true; sp.classList.remove('out', 'recap'); document.body.classList.remove('splashing'); render(); }, 750);
+  }
+  async function showDaySplash(mode) {
+    const sp = $('#splash'), day = G.today(), morning = mode === 'morning';
+    splashMode = mode; $('#spDate').textContent = longDate();
+    $('#spGreet').textContent = morning ? 'Let’s start your day.' : 'Let’s close out today.';
+    $('#spBrief').innerHTML = morning ? morningBrief(day) : recapBrief(day);
+    $('#spGo').textContent = morning ? 'Start my day' : 'Back to today';
+    $('#spSkip').textContent = morning ? 'Skip intro' : 'Close recap';
+    $('#spQuote').innerHTML = '<span class="sk"></span>'; $('#spAuthor').textContent = '';
+    sp.classList.remove('out', 'recap'); if (!morning) sp.classList.add('recap');
+    sp.hidden = false; document.body.classList.add('splashing');
+    const cached = state.quote && state.quote.date === day && state.quote.text.length <= 100 ? state.quote : null;
+    const q = cached || await Quotes.get(day);
+    if (splashMode !== mode) return;
+    state.quote = { date: day, text: q.text, author: q.author }; persist();
+    $('#spQuote').innerHTML = q.text.split(/\s+/).map((w, i) => '<span class="w" style="--i:' + i + '">' + esc(w) + ' </span>').join('');
+    $('#spAuthor').textContent = '— ' + q.author; $('#spAuthor').classList.remove('in'); void $('#spAuthor').offsetWidth; $('#spAuthor').classList.add('in');
+  }
+  async function startSplash() { if (state.lastSplash !== G.today()) await showDaySplash('morning'); }
+  $('#spGo').addEventListener('click', dismissSplash);
+  $('#spSkip').addEventListener('click', dismissSplash);
+  document.addEventListener('keydown', e => { if (!$('#splash').hidden && (e.key === 'Enter' || e.key === 'Escape')) dismissSplash(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && view === 'today') render(false); });
 
   /* ---------- Expanded chart view ---------- */
@@ -771,11 +811,14 @@
   if (state.name) startSplash(); else openWelcome();
   setInterval(async () => {
     if (view !== 'today' || document.hidden) return;
-    const r = await Quotes.get(G.today());
-    if (state.quote && state.quote.date !== G.today()) return;
-    state.quote = { date: G.today(), text: r.text, author: r.author }; persist();
+    const day = G.today(), r = await Quotes.next(day, state.quote);
+    state.quote = { date: day, text: r.text, author: r.author }; persist();
     const card = $('#todayQuote');
     if (card) { card.querySelector('blockquote').textContent = `“${r.text}”`; card.querySelector('figcaption span').textContent = '— ' + r.author; }
-  }, 20000);
+    if (!$('#splash').hidden) {
+      $('#spQuote').innerHTML = r.text.split(/\s+/).map((w, i) => '<span class="w" style="--i:' + i + '">' + esc(w) + ' </span>').join('');
+      $('#spAuthor').textContent = '— ' + r.author;
+    }
+  }, 24000);
   document.fonts && document.fonts.ready.then(movePill);
 })();

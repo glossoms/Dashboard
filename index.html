@@ -98,13 +98,11 @@
 <input type="file" id="icsFile" accept=".ics,text/calendar" hidden>
 <div id="splash" class="splash" hidden>
   <div class="sp-in">
-    <div class="eyebrow" id="spDate"></div>
-    <h1 id="spGreet"></h1>
-    <blockquote id="spQuote" class="sp-quote"></blockquote>
-    <cite id="spAuthor"></cite>
-    <button class="btn primary" id="spGo">Begin</button>
+    <div class="sp-topline"><div class="eyebrow" id="spDate"></div><button class="sp-skip" id="spSkip">Skip intro</button></div>
+    <div class="sp-focus"><h1 id="spGreet"></h1><blockquote id="spQuote" class="sp-quote"></blockquote><cite id="spAuthor"></cite></div>
+    <section class="sp-brief" id="spBrief" aria-live="polite"></section>
+    <button class="btn primary" id="spGo">Start my day</button>
   </div>
-  <div class="sp-bar"><i id="spBar"></i></div>
 </div>
 <div id="tip" class="tip"></div>
 
