@@ -30,13 +30,47 @@
   const icon = n => `<svg class="ic"><use href="#i-${n}"/></svg>`;
   const clientOf = id => state.clients.find(c => c.id === id);
   const hue = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
-  /* Client avatar: Roblox headshot when an ID is set (loaded as a plain image); initials on a colour otherwise. */
+  /* Client avatar: fetch Roblox's current thumbnail URL; initials remain as the fallback. */
   function avatar(c, size = '') {
     if (!c) return '';
     const ini = esc(c.name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase());
-    const img = c.roblox ? `<img src="https://www.roblox.com/headshot-thumbnail/image?userId=${c.roblox}&width=150&height=150&format=png" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+    const img = c.roblox ? `<img data-roblox-id="${esc(c.roblox)}" alt="" loading="lazy" hidden referrerpolicy="no-referrer">` : '';
     return `<span class="av ${size}" style="--h:${hue(c.name)}" title="${esc(c.name)}"><span class="av-f">${ini}</span>${img}</span>`;
   };
+  const robloxThumbCache = new Map();
+  function getRobloxThumbnail(id) {
+    if (!robloxThumbCache.has(id)) robloxThumbCache.set(id, (async () => {
+      const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(id)}&size=150x150&format=Png&isCircular=false`;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const response = await fetch(url, { cache: 'force-cache' });
+          if (!response.ok) throw new Error('Thumbnail request failed');
+          const json = await response.json(), entry = (json.data || []).find(x => String(x.targetId) === String(id)) || (json.data || [])[0];
+          if (entry && entry.state === 'Completed' && entry.imageUrl) return entry.imageUrl;
+          if (entry && entry.state === 'Failed') return null;
+        } catch (err) { return null; }
+        await new Promise(resolve => setTimeout(resolve, 450));
+      }
+      return null;
+    })());
+    return robloxThumbCache.get(id);
+  }
+  function loadRobloxAvatars(root = document) {
+    root.querySelectorAll('img[data-roblox-id]').forEach(img => {
+      const id = img.dataset.robloxId;
+      const fallback = () => {
+        if (!img.isConnected) return;
+        img.onerror = () => img.remove();
+        img.src = `https://www.roblox.com/headshot-thumbnail/image?userId=${encodeURIComponent(id)}&width=150&height=150&format=png`;
+        img.hidden = false;
+      };
+      getRobloxThumbnail(id).then(url => {
+        if (!img.isConnected) return;
+        if (!url) return fallback();
+        img.onerror = fallback; img.src = url; img.hidden = false;
+      });
+    });
+  }
   const clientOpts = sel => '<option value="">No client</option>' + state.clients.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
   const parseDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
   const fmtDate = s => parseDate(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -48,13 +82,14 @@
 
   /* ---------- Views ---------- */
   const OVERVIEW_PERIODS = { '30d': { days: 30, label: '30 days' }, '90d': { days: 90, label: '90 days' }, '6m': { days: 183, label: '6 months' }, '12m': { days: 365, label: '12 months' } };
+  const recognizedAmount = c => c.netPrice == null ? c.price : c.netPrice;
   function overviewData() {
     const period = OVERVIEW_PERIODS[state.overviewRange] || OVERVIEW_PERIODS['6m'];
     const since = new Date(); since.setDate(since.getDate() - period.days);
     const startKey = G.today(since), nowKey = G.monthKey(G.today());
     const [sy, sm] = startKey.slice(0, 7).split('-').map(Number), [ny, nm] = nowKey.split('-').map(Number);
     const months = Math.max(1, (ny - sy) * 12 + nm - sm + 1);
-    return { ...period, startKey, nowKey, months, commissions: state.commissions.filter(c => c.date >= startKey) };
+    return { ...period, startKey, nowKey, months, commissions: state.commissions.filter(c => c.date >= startKey).map(c => ({ ...c, price: recognizedAmount(c) })) };
   }
   function overviewTime(range) {
     return range.commissions.reduce((s, c) => s + (c.time || 0), 0) + state.tasks.filter(t => t.created && G.today(new Date(t.created)) >= range.startKey).reduce((s, t) => s + G.taskElapsed(t), 0);
@@ -70,6 +105,7 @@
     const maxMs = Math.max(0, ...dl.flatMap(i => [i.allotted, i.actual])), big = maxMs >= 48 * 36e5, div = big ? 864e5 : 36e5;
     const gItems = dl.map(i => ({ label: esc(i.name.length > 9 ? i.name.slice(0, 8) + '…' : i.name), a: i.allotted / div, b: i.actual / div, late: i.late, tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · actual ${dur(i.actual)}${i.late ? ' · late' : ' · on time'}` }));
     const rows = series.slice().reverse().map(m => `<tr><td>${monthName(m.key, true)}</td><td>${m.count}</td><td>${m.count ? money(m.avg) : '–'}</td><td class="r">${money(m.revenue)}</td></tr>`).join('');
+    const best = list.reduce((b, c) => !b || c.price > b.price ? c : b, null), bestClient = best && clientOf(best.clientId);
     return `
     <section class="hero card rise">
       <div><div class="eyebrow">Collected revenue</div>
@@ -92,7 +128,7 @@
       ${Charts.grouped(gItems, { id: 'ddl' })}${gItems.length ? '<div class="legend"><span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span></div>' : ''}</div>
     <div class="card rise"><h3>Monthly overview</h3>
       <div class="scroll"><table><thead><tr><th>Month</th><th>Count</th><th>Average</th><th class="r">Revenue</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${list.length ? `<div class="best">${icon('up')}<span>Top: <b>${esc(list.reduce((b,c)=>c.price>b.price?c:b,list[0]).name)}</b> · ${money(list.reduce((b,c)=>c.price>b.price?c:b,list[0]).price)}</span></div>` : ''}
+      ${best ? `<div class="best">${icon('up')}<span>Top: ${bestClient ? `<b>${esc(bestClient.name)}</b> · ` : ''}<b>${esc(best.name)}</b> · ${money(best.price)}</span></div>` : ''}
     </div></section>`;
   }
   const stat = (ic, label, val, note, count) => `<div class="card stat rise">${icon(ic)}<div class="lab">${label}</div><div class="val"${count ? ` data-count="${count[0]}" data-kind="${count[1]}"` : ''}>${val}</div><div class="muted">${note}</div></div>`;
@@ -102,8 +138,8 @@
     const list = G.sortByDate(state.commissions).reverse();
     const awaiting = state.awaiting || [];
     const items = list.map((c, i) => `<li class="item rise" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.paymentFee ? ` · ${esc(c.paymentMethod || 'Payment')} fee ${money(c.paymentFee)} on ${money(c.grossPrice || c.price)}` : ''}</div></div>
-      <div class="price">${money(c.price)}</div>
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
+      <div class="price">${money(c.grossPrice ?? c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
     const waitingItems = awaiting.map(c => {
@@ -147,6 +183,7 @@
     const el = $('#view');
     el.className = animate ? 'fade' : 'still';
     el.innerHTML = { today: todayView, overview, commissions, tasks, clients: clientsView }[view]();
+    loadRobloxAvatars(el);
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
     movePill();
     if (animate) countUp();
@@ -195,7 +232,13 @@
     const unchanged = form.price.dataset.usd !== '' && entered === +form.price.dataset.orig;
     const price = unchanged ? +form.price.dataset.usd : Math.round((entered / rate()) * 1e4) / 1e4;
     if (isTask) Object.assign(task(editingId), { title: name, price, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null });
-    else if (editingId) Object.assign(state.commissions.find(c => c.id === editingId), { name, price, date, clientId: form.client.value || null });
+    else if (editingId) {
+      const existing = state.commissions.find(c => c.id === editingId);
+      if (existing.netPrice != null) {
+        const fee = existing.paymentMethod === 'wise' ? wiseFee(price) : 0;
+        Object.assign(existing, { name, price, grossPrice: price, paymentFee: fee, netPrice: Math.max(0, Math.round((price - fee) * 1e4) / 1e4), date, clientId: form.client.value || null });
+      } else Object.assign(existing, { name, price, date, clientId: form.client.value || null });
+    }
     else state.commissions.push({ id: G.uid(), name, price, date, time: 0, created: Date.now(), clientId: form.client.value || null });
     persist(); Sound.play('add'); render(false);
   });
@@ -258,7 +301,7 @@
     paid: id => {
       const c = (state.awaiting || []).find(x => x.id === id); if (!c) return;
       const grossPrice = c.price || 0, fee = c.paymentMethod === 'wise' ? wiseFee(grossPrice) : 0, netPrice = Math.max(0, Math.round((grossPrice - fee) * 10000) / 10000);
-      state.commissions.push({ id: G.uid(), name: c.name, price: netPrice, grossPrice, paymentFee: fee, paymentMethod: c.paymentMethod || 'wise', date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
+      state.commissions.push({ id: G.uid(), name: c.name, price: grossPrice, grossPrice, netPrice, paymentFee: fee, paymentMethod: c.paymentMethod || 'wise', date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
       state.awaiting = state.awaiting.filter(x => x.id !== id);
       persist(); render(false); toast('Payment recorded');
     }
@@ -422,6 +465,7 @@
   function previewClient() {
     const rbx = G.parseRobloxId(cform.rbx.value);
     $('#cPrev').innerHTML = avatar({ name: cform.name.value.trim() || '?', roblox: rbx }, 'lg');
+    loadRobloxAvatars($('#cPrev'));
     cform.rbx.setCustomValidity(cform.rbx.value.trim() && !rbx ? 'Use the numeric Roblox ID or a profile link' : '');
   }
   function openClient(id) {
