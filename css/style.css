@@ -288,3 +288,8 @@ body.splashing{overflow:hidden}
 .brand-wrap:hover .brand-edit,.brand-wrap:focus-within .brand-edit{opacity:1;transform:none}
 .brand-edit:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
 @media(max-width:560px){.brand-wrap{display:none}}
+
+/* Payment tracking */
+.awaiting-section,.commission-history{margin-top:20px}.section-title{display:flex;align-items:baseline;gap:10px;margin:0 4px 8px}.section-title h2{font-size:17px;letter-spacing:-.02em;margin:0}.section-title .muted{font-size:12px}
+.paid-btn{white-space:nowrap;padding:8px 12px}.paid-btn .ic{width:16px;height:16px;stroke-width:2.5}
+@media(max-width:760px){.awaiting-item .paid-btn{flex:1 1 100%;justify-content:center;margin:4px 0 0}.awaiting-item .price{margin-left:auto}}

@@ -87,13 +87,18 @@
 
   function commissions() {
     const list = G.sortByDate(state.commissions).reverse();
+    const awaiting = state.awaiting || [];
     const items = list.map((c, i) => `<li class="item rise" style="animation-delay:${Math.min(i, 10) * 30}ms">
       ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div></div>
       <div class="price">${money(c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
+    const waitingItems = awaiting.map(c => `<li class="item awaiting-item">
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}Work finished ${fmtDate(c.finishedDate || G.today())}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div></div>
+      <div class="price">${money(c.price)}</div><button class="btn primary paid-btn" data-act="paid" data-id="${c.id}">${icon('check')}<span>Payment completed</span></button></li>`).join('');
     return `<div class="bar-head"><div><h1>Commissions</h1>${rateNote()}</div><button class="btn primary" data-act="add">${icon('plus')}<span>Add</span></button></div>
-      ${list.length ? `<ul class="list card">${items}</ul>` : `<div class="empty card">${icon('wallet')}<p>No commissions yet</p></div>`}`;
+      ${awaiting.length ? `<section class="awaiting-section"><div class="section-title"><h2>Awaiting payment</h2><span class="muted">${awaiting.length} finished</span></div><ul class="list card">${waitingItems}</ul></section>` : ''}
+      ${list.length ? `<section class="commission-history"><div class="section-title"><h2>Paid commissions</h2></div><ul class="list card">${items}</ul></section>` : `<div class="empty card">${icon('wallet')}<p>${awaiting.length ? 'No paid commissions yet' : 'No commissions yet'}</p></div>`}`;
   }
 
   function taskItem(t) {
@@ -105,7 +110,7 @@
       <button class="icon" data-act="reset" data-id="${t.id}" aria-label="Reset timer">${icon('reset')}</button>
       <button class="icon" data-act="edittask" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="deltask" data-id="${t.id}" aria-label="Delete">${icon('trash')}</button>
-      <button class="btn complete" data-act="complete" data-id="${t.id}">${icon('check')}<span>Complete</span></button></li>`;
+      <button class="btn complete" data-act="complete" data-id="${t.id}">${icon('check')}<span>Work finished</span></button></li>`;
   }
 
   function tasks() {
@@ -211,7 +216,7 @@
     delclient: id => {
       const c = clientOf(id); if (!c || !confirm(`Delete “${c.name}”? Their commissions are kept.`)) return;
       state.clients = state.clients.filter(x => x.id !== id);
-      state.commissions.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.tasks.forEach(x => { if (x.clientId === id) x.clientId = null; });
+      state.commissions.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.awaiting.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.tasks.forEach(x => { if (x.clientId === id) x.clientId = null; });
       persist(); render(false);
     },
     editrate: () => { editingRate = true; render(false); },
@@ -219,9 +224,15 @@
     complete: id => {
       const t = task(id); if (!t) return;
       pauseT(t);
-      state.commissions.push({ id: G.uid(), name: t.title, price: t.price || 0, date: G.today(), time: t.elapsed, created: Date.now(), workStart: t.firstStart || t.created, deadline: t.deadline || null, completedAt: Date.now(), clientId: t.clientId || null });
+      state.awaiting.unshift({ id: t.id, name: t.title, price: t.price || 0, finishedDate: G.today(), time: t.elapsed, created: t.created || Date.now(), workStart: t.firstStart || t.created, deadline: t.deadline || null, completedAt: Date.now(), clientId: t.clientId || null });
       state.tasks = state.tasks.filter(x => x.id !== id);
-      persist(); render(false); toast('Added to your commissions');
+      persist(); render(false); toast('Moved to awaiting payment');
+    },
+    paid: id => {
+      const c = (state.awaiting || []).find(x => x.id === id); if (!c) return;
+      state.commissions.push({ id: G.uid(), name: c.name, price: c.price || 0, date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
+      state.awaiting = state.awaiting.filter(x => x.id !== id);
+      persist(); render(false); toast('Payment recorded');
     }
   };
   document.addEventListener('click', e => {

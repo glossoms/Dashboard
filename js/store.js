@@ -1,7 +1,7 @@
 /* Data layer + calculations. Pure functions are exported for testing in Node. */
 (function (root) {
   const KEY = 'gloom.v1';
-  const empty = () => ({ commissions: [], tasks: [], clients: [], todos: [], events: [], notes: {}, quote: null, lastSplash: '', sound: true, currency: 'USD', rate: { value: 95, manual: false, updated: 0 } });
+  const empty = () => ({ commissions: [], awaiting: [], tasks: [], clients: [], todos: [], events: [], notes: {}, quote: null, lastSplash: '', sound: true, currency: 'USD', rate: { value: 95, manual: false, updated: 0 } });
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
 
   function load() {
