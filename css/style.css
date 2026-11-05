@@ -275,3 +275,9 @@ body.splashing{overflow:hidden}
 .widget-ghost:hover{border-color:var(--accent);color:var(--accent)}.done-edit{margin-left:auto}
 @media(max-width:860px){.today-layout{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){.today-layout.editing .today-widget{animation:none}}
+
+/* First-run personalization and matching Overview hover feedback */
+.welcome-dialog{width:min(430px,calc(100vw - 32px))}.welcome-dialog h2{margin:7px 0 4px}.welcome-copy{margin-bottom:18px;font-size:14px}
+.hero.card,.stats .card,.charts .card{transition:transform .35s var(--ease),box-shadow .4s var(--ease)}
+.hero.card:hover,.stats .card:hover,.charts .card:hover{transform:translateY(-3px);box-shadow:0 1px 2px rgba(0,0,0,.04),0 14px 44px rgba(0,0,0,.1)}
+@media(hover:none){.hero.card:hover,.stats .card:hover,.charts .card:hover{transform:none}}

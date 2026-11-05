@@ -6,6 +6,7 @@
   let view = location.hash.slice(1) || 'today';
   let editingId = null, editingRate = false;
   const persist = () => G.save(state);
+  const syncBrand = () => { const brand = $('#brand'); if (brand) brand.textContent = state.name || 'Gloom'; };
 
   /* All amounts are stored in USD; INR is a display conversion using state.rate. */
   const rate = () => (state.currency === 'INR' ? state.rate.value : 1);
@@ -412,6 +413,13 @@
     $('#soundBtn use').setAttribute('href', state.sound ? '#i-sound' : '#i-mute');
     $('#soundBtn').classList.toggle('off', !state.sound); Sound.set(state.sound);
   }
+  const welcomeDlg = $('#welcome'), welcomeForm = $('#welcomeForm');
+  welcomeForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = welcomeForm.elements.name.value.trim();
+    if (!name) { welcomeForm.elements.name.focus(); return; }
+    state.name = name; persist(); syncBrand(); welcomeDlg.close(); startSplash();
+  });
   let splashClose = null;
   async function startSplash() {
     const sp = $('#splash'), day = G.today();
@@ -544,11 +552,12 @@
 
   window.addEventListener('resize', movePill);
   window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (VIEWS.includes(v) && v !== view) { view = v; render(); } });
-  window.addEventListener('storage', () => { state = G.load(); render(false); });
+  window.addEventListener('storage', () => { state = G.load(); syncBrand(); render(false); });
   if (!VIEWS.includes(view)) view = 'today';
   syncSound();
+  syncBrand();
   render();
-  startSplash();
+  if (state.name) startSplash(); else welcomeDlg.showModal();
   setInterval(async () => {
     if (view !== 'today' || document.hidden) return;
     const r = await Quotes.get(G.today());
