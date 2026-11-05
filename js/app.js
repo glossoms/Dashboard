@@ -2,6 +2,7 @@
   const G = window.Gloom, $ = (s, r = document) => r.querySelector(s);
   let state = G.load();
   state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0, deadline: null }, t, { firstStart: t.firstStart || t.startedAt || (t.elapsed ? t.created : null) })); // migrate older items
+  state.awaiting = (state.awaiting || []).map(c => Object.assign({}, c, { paymentMethod: 'wise' }));
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
   let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null;
@@ -138,7 +139,7 @@
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
     const waitingItems = awaiting.map(c => {
-      const fee = (!c.paymentMethod || c.paymentMethod === 'wise') ? wiseFee(c.price || 0) : 0, net = Math.max(0, (c.price || 0) - fee), editing = editingAwaitingId === c.id;
+      const fee = wiseFee(c.price || 0), net = Math.max(0, (c.price || 0) - fee), editing = editingAwaitingId === c.id;
       return `<li class="item awaiting-item">
         ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}Work finished ${fmtDate(c.finishedDate || G.today())}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div>
         <div class="awaiting-estimate" title="Approximation: 1.8% conversion fee, 18% GST on that fee, plus a fixed $2 transfer charge">Wise estimate: ${money(fee)} fee · ${money(net)} net <span class="muted">(approx.)</span></div></div>
@@ -295,7 +296,7 @@
     },
     paid: id => {
       const c = (state.awaiting || []).find(x => x.id === id); if (!c) return;
-      const grossPrice = c.price || 0, fee = (!c.paymentMethod || c.paymentMethod === 'wise') ? wiseFee(grossPrice) : 0, netPrice = Math.max(0, Math.round((grossPrice - fee) * 10000) / 10000);
+      const grossPrice = c.price || 0, fee = wiseFee(grossPrice), netPrice = Math.max(0, Math.round((grossPrice - fee) * 10000) / 10000);
       state.commissions.push({ id: G.uid(), name: c.name, price: grossPrice, grossPrice, netPrice, paymentFee: fee, paymentMethod: c.paymentMethod || 'wise', date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
       state.awaiting = state.awaiting.filter(x => x.id !== id);
       persist(); render(false); toast('Payment recorded');
