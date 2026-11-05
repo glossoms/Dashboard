@@ -4,6 +4,7 @@
   state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0, deadline: null }, t, { firstStart: t.firstStart || t.startedAt || (t.elapsed ? t.created : null) })); // migrate older items
   state.awaiting = (state.awaiting || []).map(c => Object.assign({}, c, { paymentMethod: 'wise' }));
   state.percentages = state.percentages || [];
+  state.clients = (state.clients || []).map(c => Object.assign({ experiences: [] }, c));
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
   let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null, editingPercentId = null;
@@ -360,6 +361,9 @@
     addclient: () => openClient(),
     editclient: id => openClient(id),
     toggleclient: id => { openClientId = openClientId === id ? null : id; render(false); },
+    addexperience: id => { openClientId = id; addingExperienceClientId = addingExperienceClientId === id ? null : id; render(false); const input = $('#experienceUrl'); if (input) input.focus(); },
+    removeexperience: (id, btn) => { const c = clientOf(btn.dataset.client); if (!c) return; c.experiences = (c.experiences || []).filter(x => x.universeId !== btn.dataset.place); persist(); render(false); },
+    refreshexperiences: id => refreshClientExperiences(id),
     delclient: id => {
       const c = clientOf(id); if (!c || !confirm(`Delete “${c.name}”? Their commissions are kept.`)) return;
       state.clients = state.clients.filter(x => x.id !== id);
@@ -513,7 +517,7 @@
         ${due.length ? `<ul class="list flat">${due.map(dueItem).join('')}</ul>` : empty('Nothing due this week')}</div>`},
       {id:'notes',label:'Notes',html:`<div class="card rise notes"><div class="head free"><h3>Notes</h3></div>
         <div class="ncols">
-          <div class="ncol"><div class="nl">Yesterday · ${wk(yKey)} <span class="need" id="needBadge" ${yNote.trim() ? 'hidden' : ''}>Needs filling</span></div><textarea data-note="${yKey}" class="${yNote.trim() ? '' : 'attn'}" placeholder="What got done? What’s left?">${esc(yNote)}</textarea></div>
+          <div class="ncol"><div class="nl">Yesterday · ${wk(yKey)} <span class="need" id="needBadge" title="Yesterday’s note needs filling" aria-label="Yesterday’s note needs filling" ${yNote.trim() ? 'hidden' : ''}>${icon('bell')}</span></div><textarea data-note="${yKey}" class="${yNote.trim() ? '' : 'attn'}" placeholder="What got done? What’s left?">${esc(yNote)}</textarea></div>
           <div class="ncol"><div class="nl">Today</div><textarea data-note="${ymd}" placeholder="Wins, blockers, ideas…">${esc(state.notes[ymd] || '')}</textarea></div>
         </div></div>`}
     ].filter(w => w.html && !layout.hidden.includes(w.id));
@@ -570,7 +574,7 @@
 
   /* ---------- Clients ---------- */
   const cdlg = $('#cdlg'), cform = $('#cform');
-  let editingClient = null, openClientId = null, prevTimer;
+  let editingClient = null, openClientId = null, prevTimer, addingExperienceClientId = null;
   function previewClient() {
     const rbx = G.parseRobloxId(cform.rbx.value);
     $('#cPrev').innerHTML = avatar({ name: cform.name.value.trim() || '?', roblox: rbx }, 'lg');
@@ -595,6 +599,69 @@
   $('#cCancel').onclick = () => { Sound.play('close'); cdlg.close(); };
   cdlg.addEventListener('click', e => { if (e.target === cdlg) cdlg.close(); });
 
+  function parseRobloxExperience(input) {
+    const value = input.trim();
+    if (/^\d+$/.test(value)) return { placeId: value, universeId: null };
+    let url;
+    try { url = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value); } catch (e) { return null; }
+    if (!/(^|\.)roblox\.com$/i.test(url.hostname)) return null;
+    const placeId = (url.pathname.match(/\/games\/(\d+)/i) || [])[1] || url.searchParams.get('placeId');
+    const universeId = (url.pathname.match(/\/experiences\/(\d+)/i) || [])[1] || url.searchParams.get('universeId');
+    return placeId || universeId ? { placeId, universeId } : null;
+  }
+  async function robloxJson(url) {
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      if (!response.ok) throw new Error('Roblox returned ' + response.status);
+      return await response.json();
+    } finally { clearTimeout(timeout); }
+  }
+  async function fetchRobloxExperience(ref) {
+    let universeId = ref.universeId;
+    if (!universeId) {
+      const resolved = await robloxJson('https://apis.roblox.com/universes/v1/places/' + encodeURIComponent(ref.placeId) + '/universe');
+      universeId = resolved.universeId;
+    }
+    if (!universeId) throw new Error('Could not find that Roblox experience.');
+    const result = await robloxJson('https://games.roblox.com/v1/games?universeIds=' + encodeURIComponent(universeId));
+    const game = result && result.data && result.data[0];
+    if (!game || !game.id || game.isContentRestricted) throw new Error('That experience has no public stats available.');
+    return { id: G.uid(), placeId: String(game.rootPlaceId || ref.placeId || ''), universeId: String(game.id), name: game.name || 'Roblox experience', visits: Number(game.visits) || 0, playing: Number(game.playing) || 0, updatedAt: Date.now() };
+  }
+  async function addRobloxExperience(form) {
+    const client = clientOf(form.dataset.client), value = form.elements.url.value.trim(), button = form.querySelector('button[type="submit"]'), error = form.querySelector('.experience-error');
+    if (!client) return;
+    const ref = parseRobloxExperience(value);
+    if (!ref) { error.textContent = 'Paste a Roblox game link or place ID.'; return; }
+    button.disabled = true; button.textContent = 'Loading…'; error.textContent = '';
+    try {
+      const experience = await fetchRobloxExperience(ref), items = client.experiences || (client.experiences = []);
+      if (items.some(x => x.universeId === experience.universeId)) { error.textContent = 'That experience is already linked.'; button.disabled = false; button.textContent = 'Submit'; return; }
+      experience.url = value; items.push(experience); addingExperienceClientId = null; persist(); render(false); toast('Experience linked');
+    } catch (err) {
+      error.textContent = err.name === 'AbortError' ? 'Roblox took too long to respond. Try again.' : (err.message || 'Could not load public Roblox stats. Try the game link or place ID.');
+      button.disabled = false; button.textContent = 'Submit';
+    }
+  }
+  async function refreshClientExperiences(id) {
+    const client = clientOf(id); if (!client || !client.experiences || !client.experiences.length) return;
+    toast('Refreshing Roblox stats…');
+    const results = await Promise.allSettled(client.experiences.map(x => fetchRobloxExperience({ placeId: x.placeId, universeId: x.universeId })));
+    let updated = 0;
+    results.forEach((result, i) => {
+      if (result.status !== 'fulfilled') return;
+      client.experiences[i] = Object.assign({}, result.value, { url: client.experiences[i].url });
+      updated++;
+    });
+    if (updated) { persist(); render(false); }
+    toast(updated === results.length ? 'Roblox stats refreshed' : 'Some Roblox stats could not be refreshed');
+  }
+  document.addEventListener('submit', e => {
+    if (e.target.id !== 'experienceForm') return;
+    e.preventDefault(); addRobloxExperience(e.target);
+  });
+
   function clientsView() {
     const stats = G.clientStats(state.commissions);
     const list = state.clients.slice().sort((a, b) => ((stats[b.id] || {}).revenue || 0) - ((stats[a.id] || {}).revenue || 0));
@@ -602,11 +669,18 @@
       const s = stats[c.id] || { count: 0, revenue: 0, last: '' }, open = openClientId === c.id;
       const pend = state.tasks.filter(t => t.clientId === c.id), hist = G.sortByDate(state.commissions.filter(x => x.clientId === c.id)).reverse();
       const rows = pend.map(t => `<li><span>${esc(t.title)}</span><span class="muted">In progress</span><b>${money(t.price || 0)}</b></li>`).join('') + hist.map(x => `<li><span>${esc(x.name)}</span><span class="muted">${fmtDate(x.date)}</span><b>${money(x.price)}</b></li>`).join('');
+      const experiences = c.experiences || [], totalVisits = experiences.reduce((n, x) => n + (Number(x.visits) || 0), 0), totalPlaying = experiences.reduce((n, x) => n + (Number(x.playing) || 0), 0);
+      const count = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+      const experienceCards = experiences.map(x => `<article class="experience-card"><div class="experience-game-name">${esc(x.name)}</div><div class="experience-game-stats"><span><b>${count(Number(x.visits) || 0)}</b> visits</span><span><b>${count(Number(x.playing) || 0)}</b> playing</span></div><button class="experience-remove" data-act="removeexperience" data-client="${esc(c.id)}" data-place="${esc(x.universeId)}" aria-label="Remove ${esc(x.name)}">×</button></article>`).join('');
+      const experiencePanel = open ? `<section class="client-experiences"><div class="experience-title"><h3>Experiences contributed to</h3>${experiences.length ? `<button class="experience-refresh" data-act="refreshexperiences" data-id="${esc(c.id)}">Refresh stats</button>` : ''}</div>
+        ${experiences.length ? `<div class="experience-total"><span>Contributed to</span><strong title="${totalVisits.toLocaleString()}">${count(totalVisits)}</strong><span>visits and</span><strong title="${totalPlaying.toLocaleString()}">${count(totalPlaying)}</strong><span>CCU</span></div>` : '<p class="experience-hint">Link Roblox experiences to see their combined reach.</p>'}
+        <div class="experience-grid">${experienceCards}${addingExperienceClientId === c.id ? `<form class="experience-form" id="experienceForm" data-client="${esc(c.id)}"><label for="experienceUrl">Roblox game link or place ID</label><div class="experience-input-row"><input id="experienceUrl" name="url" required placeholder="roblox.com/games/…" autocomplete="url"><button class="btn primary" type="submit">Submit</button></div><p class="experience-error" aria-live="polite"></p></form>` : `<button class="experience-add" data-act="addexperience" data-id="${esc(c.id)}"><span>+</span><small>Link an experience</small></button>`}</div>
+        </section>` : '';
       return `<div class="card client rise ${open ? 'open' : ''}">
         <div class="c-top" data-act="toggleclient" data-id="${c.id}">${avatar(c, 'lg')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${c.roblox ? 'Roblox · ' + c.roblox : 'No Roblox ID'}</div></div>
           <button class="icon" data-act="editclient" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button><button class="icon danger" data-act="delclient" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></div>
         <div class="c-stats"><div><b>${s.count}</b><span>commissions</span></div><div><b>${money(s.revenue)}</b><span>earned</span></div><div><b>${pend.length}</b><span>in progress</span></div></div>
-        ${open ? (rows ? `<ul class="c-list">${rows}</ul>` : '<div class="muted c-none">Nothing yet</div>') : ''}</div>`;
+        ${open ? (rows ? `<ul class="c-list">${rows}</ul>` : '<div class="muted c-none">Nothing yet</div>') + experiencePanel : ''}</div>`;
     };
     return `<div class="bar-head"><h1>Clients</h1><button class="btn primary" data-act="addclient">${icon('plus')}<span>Add</span></button></div>
       ${list.length ? `<div class="cgrid">${list.map(card).join('')}</div>` : `<div class="empty card">${icon('users')}<p>No clients yet</p></div>`}`;
