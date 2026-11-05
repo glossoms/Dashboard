@@ -42,23 +42,46 @@
     return `<span class="av ${size}" style="--h:${hue(c.name)}" title="${esc(c.name)}"><span class="av-f">${ini}</span>${img}</span>`;
   };
   const robloxThumbCache = new Map();
+  const robloxThumbPending = new Map(), robloxThumbQueue = new Set();
+  let robloxThumbFlushTimer = null;
+  function scheduleRobloxThumbFlush(delay = 35) {
+    if (robloxThumbFlushTimer) return;
+    robloxThumbFlushTimer = setTimeout(flushRobloxThumbQueue, delay);
+  }
   function getRobloxThumbnail(id) {
-    if (!robloxThumbCache.has(id)) robloxThumbCache.set(id, (async () => {
-      const upstream = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(id)}&size=150x150&format=Png&isCircular=false`;
-      const url = `https://proxy.cors.dev/${upstream}`;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          const response = await fetch(url, { cache: 'force-cache', credentials: 'omit' });
-          if (!response.ok) throw new Error('Thumbnail request failed');
-          const json = await response.json(), entry = (json.data || []).find(x => String(x.targetId) === String(id)) || (json.data || [])[0];
-          if (entry && entry.state === 'Completed' && entry.imageUrl) return entry.imageUrl;
-          if (entry && entry.state === 'Failed') return null;
-        } catch (err) { return null; }
-        await new Promise(resolve => setTimeout(resolve, 450));
-      }
-      return null;
-    })());
-    return robloxThumbCache.get(id);
+    if (robloxThumbCache.has(id)) return Promise.resolve(robloxThumbCache.get(id));
+    if (robloxThumbPending.has(id)) return robloxThumbPending.get(id).promise;
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    robloxThumbPending.set(id, { promise, resolve, attempts: 0 }); robloxThumbQueue.add(id); scheduleRobloxThumbFlush();
+    return promise;
+  }
+  async function flushRobloxThumbQueue() {
+    robloxThumbFlushTimer = null;
+    const ids = [...robloxThumbQueue].slice(0, 100); ids.forEach(id => robloxThumbQueue.delete(id));
+    if (!ids.length) return;
+    const retry = id => {
+      const item = robloxThumbPending.get(id); if (!item) return;
+      item.attempts++;
+      if (item.attempts >= 4) { item.resolve(null); robloxThumbPending.delete(id); return; }
+      setTimeout(() => { if (robloxThumbPending.has(id)) { robloxThumbQueue.add(id); scheduleRobloxThumbFlush(); } }, 400 * item.attempts);
+    };
+    try {
+      const upstream = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(ids.join(','))}&size=150x150&format=Png&isCircular=false`;
+      const response = await fetch(`https://proxy.cors.dev/${upstream}`, { cache: 'no-store', credentials: 'omit' });
+      if (!response.ok) throw new Error('Thumbnail request failed');
+      const json = await response.json(), entries = new Map((json.data || []).map(x => [String(x.targetId), x]));
+      ids.forEach(id => {
+        const pending = robloxThumbPending.get(id); if (!pending) return;
+        const entry = entries.get(String(id));
+        if (entry && entry.state === 'Completed' && entry.imageUrl) {
+          robloxThumbCache.set(id, entry.imageUrl); pending.resolve(entry.imageUrl); robloxThumbPending.delete(id);
+        } else if (entry && ['Failed', 'Blocked'].includes(entry.state)) {
+          pending.resolve(null); robloxThumbPending.delete(id);
+        } else retry(id);
+      });
+    } catch (err) { ids.forEach(retry); }
+    if (robloxThumbQueue.size) scheduleRobloxThumbFlush();
   }
   function loadRobloxAvatars(root = document) {
     root.querySelectorAll('img[data-roblox-id]').forEach(img => {
@@ -66,7 +89,12 @@
       getRobloxThumbnail(id).then(url => {
         if (!img.isConnected) return;
         if (!url) return;
-        img.onerror = () => img.remove(); img.src = url; img.hidden = false;
+        img.onerror = () => {
+          if (img.dataset.avatarRetry === '1') return img.remove();
+          img.dataset.avatarRetry = '1'; robloxThumbCache.delete(id);
+          getRobloxThumbnail(id).then(next => { if (!img.isConnected) return; if (next) img.src = next; else img.remove(); });
+        };
+        img.src = url; img.hidden = false;
       });
     });
   }
