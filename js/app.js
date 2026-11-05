@@ -363,7 +363,7 @@
     toggleclient: id => { openClientId = openClientId === id ? null : id; render(false); },
     addexperience: id => { addingExperienceClientId = addingExperienceClientId === id ? null : id; render(false); const input = $('#experienceUrl'); if (input) input.focus(); },
     removeexperience: (id, btn) => { const c = clientOf(btn.dataset.client); if (!c) return; c.experiences = (c.experiences || []).filter(x => x.universeId !== btn.dataset.place); persist(); render(false); },
-    refreshexperiences: id => refreshClientExperiences(id),
+    refreshallexperiences: () => refreshAllClientExperiences(),
     delclient: id => {
       const c = clientOf(id); if (!c || !confirm(`Delete “${c.name}”? Their commissions are kept.`)) return;
       state.clients = state.clients.filter(x => x.id !== id);
@@ -646,18 +646,19 @@
       button.disabled = false; button.textContent = 'Submit';
     }
   }
-  async function refreshClientExperiences(id) {
-    const client = clientOf(id); if (!client || !client.experiences || !client.experiences.length) return;
-    toast('Refreshing Roblox stats…');
-    const results = await Promise.allSettled(client.experiences.map(x => fetchRobloxExperience({ placeId: x.placeId, universeId: x.universeId })));
+  async function refreshAllClientExperiences() {
+    const jobs = state.clients.flatMap(client => (client.experiences || []).map(experience => ({ client, experience })));
+    if (!jobs.length) return;
+    const results = await Promise.allSettled(jobs.map(({ experience }) => fetchRobloxExperience({ placeId: experience.placeId, universeId: experience.universeId })));
     let updated = 0;
     results.forEach((result, i) => {
       if (result.status !== 'fulfilled') return;
-      client.experiences[i] = Object.assign({}, result.value, { url: client.experiences[i].url });
+      const old = jobs[i].experience;
+      Object.assign(old, result.value, { id: old.id, url: old.url });
       updated++;
     });
     if (updated) { persist(); render(false); }
-    toast(updated === results.length ? 'Roblox stats refreshed' : 'Some Roblox stats could not be refreshed');
+    toast(updated === jobs.length ? 'All Roblox stats refreshed' : 'Some Roblox stats could not be refreshed');
   }
   document.addEventListener('submit', e => {
     if (e.target.id !== 'experienceForm') return;
@@ -667,15 +668,19 @@
   function clientsView() {
     const stats = G.clientStats(state.commissions);
     const list = state.clients.slice().sort((a, b) => ((stats[b.id] || {}).revenue || 0) - ((stats[a.id] || {}).revenue || 0));
+    const experienceMap = new Map();
+    state.clients.forEach(c => (c.experiences || []).forEach(x => experienceMap.set(String(x.universeId || x.placeId || x.id), x)));
+    const linkedExperiences = [...experienceMap.values()];
+    const totalVisits = linkedExperiences.reduce((n, x) => n + (Number(x.visits) || 0), 0);
+    const totalPlaying = linkedExperiences.reduce((n, x) => n + (Number(x.playing) || 0), 0);
+    const count = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
     const card = c => {
       const s = stats[c.id] || { count: 0, revenue: 0, last: '' }, open = openClientId === c.id;
       const pend = state.tasks.filter(t => t.clientId === c.id), hist = G.sortByDate(state.commissions.filter(x => x.clientId === c.id)).reverse();
       const rows = pend.map(t => `<li><span>${esc(t.title)}</span><span class="muted">In progress</span><b>${money(t.price || 0)}</b></li>`).join('') + hist.map(x => `<li><span>${esc(x.name)}</span><span class="muted">${fmtDate(x.date)}</span><b>${money(x.price)}</b></li>`).join('');
-      const experiences = c.experiences || [], totalVisits = experiences.reduce((n, x) => n + (Number(x.visits) || 0), 0), totalPlaying = experiences.reduce((n, x) => n + (Number(x.playing) || 0), 0);
-      const count = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+      const experiences = c.experiences || [];
       const experienceCards = experiences.map(x => `<article class="experience-card"><div class="experience-game-name">${esc(x.name)}</div><button class="experience-remove" data-act="removeexperience" data-client="${esc(c.id)}" data-place="${esc(x.universeId)}" aria-label="Remove ${esc(x.name)}">×</button></article>`).join('');
-      const experiencePanel = `<section class="client-experiences"><div class="experience-title"><h3>Experiences contributed to</h3>${experiences.length ? `<button class="experience-refresh" data-act="refreshexperiences" data-id="${esc(c.id)}">Refresh stats</button>` : ''}</div>
-        ${experiences.length ? `<div class="experience-total"><span>Contributed to</span><strong title="${totalVisits.toLocaleString()}">${count(totalVisits)}</strong><span>visits and</span><strong title="${totalPlaying.toLocaleString()}">${count(totalPlaying)}</strong><span>CCU</span></div>` : '<p class="experience-hint">Link Roblox experiences to see their combined reach.</p>'}
+      const experiencePanel = `<section class="client-experiences"><div class="experience-title"><h3>Linked experiences</h3></div>
         <div class="experience-grid">${experienceCards}${addingExperienceClientId === c.id ? `<form class="experience-form" id="experienceForm" data-client="${esc(c.id)}"><label for="experienceUrl">Roblox game link or place ID</label><div class="experience-input-row"><input id="experienceUrl" name="url" required placeholder="roblox.com/games/…" autocomplete="url"><button class="btn primary" type="submit">Submit</button></div><p class="experience-error" aria-live="polite"></p></form>` : `<button class="experience-add" data-act="addexperience" data-id="${esc(c.id)}"><span>+</span><small>Link an experience</small></button>`}</div>
         </section>`;
       return `<div class="card client rise ${open ? 'open' : ''}">
@@ -685,7 +690,10 @@
         ${experiencePanel}${open ? (rows ? `<ul class="c-list">${rows}</ul>` : '<div class="muted c-none">Nothing yet</div>') : ''}</div>`;
     };
     return `<div class="bar-head"><h1>Clients</h1><button class="btn primary" data-act="addclient">${icon('plus')}<span>Add</span></button></div>
-      ${list.length ? `<div class="cgrid">${list.map(card).join('')}</div>` : `<div class="empty card">${icon('users')}<p>No clients yet</p></div>`}`;
+      ${list.length ? `<div class="cgrid">${list.map(card).join('')}</div>` : `<div class="empty card">${icon('users')}<p>No clients yet</p></div>`}
+      <section class="experience-overview card"><div class="experience-overview-head"><div><div class="eyebrow">Across every client</div><h2>Experiences contributed to</h2></div>${linkedExperiences.length ? `<button class="experience-refresh" data-act="refreshallexperiences">Refresh stats</button>` : ''}</div>
+        <div class="experience-total"><span>Contributed to</span><strong title="${totalVisits.toLocaleString()}">${count(totalVisits)}</strong><span>visits and</span><strong title="${totalPlaying.toLocaleString()}">${count(totalPlaying)}</strong><span>CCU</span></div>
+        <div class="experience-overview-foot">${linkedExperiences.length} unique experience${linkedExperiences.length === 1 ? '' : 's'} linked across your clients</div></section>`;
   }
 
   /* ---------- Daily splash with a quote ---------- */

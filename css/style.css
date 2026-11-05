@@ -336,7 +336,10 @@ body.splashing{overflow:hidden}
 .experience-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
 .experience-title h3{margin:0;font-size:14px}
 .experience-refresh{border:0;background:none;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
-.experience-hint{color:var(--mute);font-size:12px;margin:6px 0 12px}
+.experience-overview{margin-top:16px;padding:24px}
+.experience-overview-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.experience-overview-head h2{font-size:clamp(18px,2.5vw,24px);letter-spacing:-.03em;margin-top:3px}
+.experience-overview-foot{margin-top:8px;color:var(--mute);font-size:12px}
 .experience-total{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 9px;margin:12px 0 14px;font-size:14px;color:var(--mute)}
 .experience-total strong{color:var(--ink);font-size:clamp(28px,4vw,42px);line-height:1;font-weight:700;letter-spacing:-.045em;font-variant-numeric:tabular-nums}
 .experience-total strong+span{margin-right:5px}
