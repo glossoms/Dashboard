@@ -4,7 +4,7 @@
   state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0, deadline: null }, t, { firstStart: t.firstStart || t.startedAt || (t.elapsed ? t.created : null) })); // migrate older items
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
-  let editingId = null, editingRate = false;
+  let editingId = null, editingRate = false, overviewRangeOpen = false;
   const persist = () => G.save(state);
   const syncBrand = () => { const brand = $('#brand'); if (brand) brand.textContent = state.name || 'Gloom'; };
 
@@ -46,30 +46,42 @@
   const hours = ms => { const m = Math.floor(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 
   /* ---------- Views ---------- */
+  const OVERVIEW_PERIODS = { '30d': { days: 30, label: '30 days' }, '90d': { days: 90, label: '90 days' }, '6m': { days: 183, label: '6 months' }, '12m': { days: 365, label: '12 months' } };
+  function overviewData() {
+    const period = OVERVIEW_PERIODS[state.overviewRange] || OVERVIEW_PERIODS['6m'];
+    const since = new Date(); since.setDate(since.getDate() - period.days);
+    const startKey = G.today(since), nowKey = G.monthKey(G.today());
+    const [sy, sm] = startKey.slice(0, 7).split('-').map(Number), [ny, nm] = nowKey.split('-').map(Number);
+    const months = Math.max(1, (ny - sy) * 12 + nm - sm + 1);
+    return { ...period, startKey, nowKey, months, commissions: state.commissions.filter(c => c.date >= startKey) };
+  }
+  function overviewTime(range) {
+    return range.commissions.reduce((s, c) => s + (c.time || 0), 0) + state.tasks.filter(t => t.created && G.today(new Date(t.created)) >= range.startKey).reduce((s, t) => s + G.taskElapsed(t), 0);
+  }
   function overview() {
-    const nowKey = G.monthKey(G.today()), st = G.stats(state.commissions, nowKey);
-    const sorted = G.sortByDate(state.commissions);
-    const series = G.monthlySeries(state.commissions, 6, nowKey);
-    const timeMs = totalTime();
-    const delta = st.delta === null ? '' : `<span class="chip ${st.delta >= 0 ? 'up' : 'down'}">${icon(st.delta >= 0 ? 'up' : 'down')}${Math.abs(st.delta)}%</span>`;
+    const range = overviewData(), list = range.commissions, sorted = G.sortByDate(list);
+    const series = G.monthlySeries(list, range.months, range.nowKey);
+    const revenue = list.reduce((s, c) => s + c.price, 0), count = list.length, average = count ? revenue / count : 0;
+    const timeMs = overviewTime(range);
     const barItems = sorted.slice(-12).map(c => ({ label: esc(c.name.length > 9 ? c.name.slice(0, 8) + '…' : c.name), value: c.price * rate(), tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}` }));
     const lineItems = series.map(m => ({ label: monthName(m.key), value: m.count, tip: `${monthName(m.key, true)} · ${m.count} commission${m.count === 1 ? '' : 's'}` }));
-    const ta = G.turnaround(state.commissions), dl = ta.withDeadline.slice(-8);
+    const ta = G.turnaround(list), dl = ta.withDeadline.slice(-8);
     const maxMs = Math.max(0, ...dl.flatMap(i => [i.allotted, i.actual])), big = maxMs >= 48 * 36e5, div = big ? 864e5 : 36e5;
     const gItems = dl.map(i => ({ label: esc(i.name.length > 9 ? i.name.slice(0, 8) + '…' : i.name), a: i.allotted / div, b: i.actual / div, late: i.late, tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · actual ${dur(i.actual)}${i.late ? ' · late' : ' · on time'}` }));
     const rows = series.slice().reverse().map(m => `<tr><td>${monthName(m.key, true)}</td><td>${m.count}</td><td>${m.count ? money(m.avg) : '–'}</td><td class="r">${money(m.revenue)}</td></tr>`).join('');
     return `
     <section class="hero card rise">
-      <div><div class="eyebrow">${monthName(nowKey, true)}</div>
-      <div class="big" id="bigRev" data-count="${st.monthRevenue}" data-kind="money">${money(st.monthRevenue)}</div>
-      <div class="sub">${delta}${st.delta === null ? '' : '<span class="muted">vs last month</span>'}</div>${rateNote()}</div>
+      <div><div class="eyebrow">Collected revenue</div>
+      <button class="big range-trigger" id="bigRev" type="button" data-act="toggleperiod" aria-controls="overviewRangePanel" aria-expanded="${overviewRangeOpen}" title="Choose overview period" data-count="${revenue}" data-kind="money">${money(revenue)}</button>
+      <div class="range-panel ${overviewRangeOpen ? 'open' : ''}" id="overviewRangePanel" aria-hidden="${!overviewRangeOpen}"><span class="muted">${range.label} · since ${fmtDate(range.startKey)}</span><select id="overviewRange" aria-label="Overview date range" tabindex="${overviewRangeOpen ? '0' : '-1'}">${Object.entries(OVERVIEW_PERIODS).map(([k,v]) => `<option value="${k}"${k === (state.overviewRange || '6m') ? ' selected' : ''}>${v.label}</option>`).join('')}</select></div>
+      <div class="sub"><span class="muted">${count} paid commission${count === 1 ? '' : 's'} in this period</span></div>${rateNote()}</div>
       <button class="btn primary" data-act="add">${icon('plus')}<span>Commission</span></button>
     </section>
     <section class="stats">
-      ${stat('wallet', 'This month', st.monthCount, 'commissions', [st.monthCount, 'int'])}
-      ${stat('grid', 'Average', money(st.monthAvg), 'per commission', [st.monthAvg, 'money'])}
-      ${stat('clock', 'Time tracked', `<span id="totalTime">${hours(timeMs)}</span>`, 'all work')}
-      ${stat('up', 'All time', money(st.total), `${st.count} total`, [st.total, 'money'])}
+      ${stat('wallet', 'Paid commissions', count, 'in selected period', [count, 'int'])}
+      ${stat('grid', 'Average', money(average), 'per commission', [average, 'money'])}
+      ${stat('clock', 'Time tracked', `<span id="totalTime">${hours(timeMs)}</span>`, 'in selected period')}
+      ${stat('up', 'Collected', money(revenue), 'in selected period', [revenue, 'money'])}
     </section>
     <section class="charts">
       <div class="card rise">${expandBtn('rev')}<h3>Revenue per commission</h3>${Charts.bars(barItems, { id: 'rev' })}</div>
@@ -79,7 +91,7 @@
       ${Charts.grouped(gItems, { id: 'ddl' })}${gItems.length ? '<div class="legend"><span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span></div>' : ''}</div>
     <div class="card rise"><h3>Monthly overview</h3>
       <div class="scroll"><table><thead><tr><th>Month</th><th>Count</th><th>Average</th><th class="r">Revenue</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${st.best ? `<div class="best">${icon('up')}<span>Top: <b>${esc(st.best.name)}</b> · ${money(st.best.price)}</span></div>` : ''}
+      ${list.length ? `<div class="best">${icon('up')}<span>Top: <b>${esc(list.reduce((b,c)=>c.price>b.price?c:b,list[0]).name)}</b> · ${money(list.reduce((b,c)=>c.price>b.price?c:b,list[0]).price)}</span></div>` : ''}
     </div></section>`;
   }
   const stat = (ic, label, val, note, count) => `<div class="card stat rise">${icon(ic)}<div class="lab">${label}</div><div class="val"${count ? ` data-count="${count[0]}" data-kind="${count[1]}"` : ''}>${val}</div><div class="muted">${note}</div></div>`;
@@ -193,6 +205,12 @@
   const pauseT = t => { if (t.startedAt) { t.elapsed = G.taskElapsed(t); t.startedAt = null; } };
   const actions = {
     layoutmode: () => { layoutEditing = !layoutEditing; render(false); },
+    toggleperiod: () => {
+      overviewRangeOpen = !overviewRangeOpen;
+      const panel = $('#overviewRangePanel'), trigger = $('#bigRev'), select = $('#overviewRange');
+      panel.classList.toggle('open', overviewRangeOpen); panel.setAttribute('aria-hidden', String(!overviewRangeOpen));
+      trigger.setAttribute('aria-expanded', String(overviewRangeOpen)); select.tabIndex = overviewRangeOpen ? 0 : -1;
+    },
     togglewidget: id => { const ids=['stats','quote','todos','schedule','deadlines','notes']; state.todayLayout=state.todayLayout||{order:ids.slice(),hidden:[]}; state.todayLayout.hidden=state.todayLayout.hidden||[]; state.todayLayout.hidden=state.todayLayout.hidden.includes(id)?state.todayLayout.hidden.filter(x=>x!==id):state.todayLayout.hidden.concat(id); persist(); render(false); },
     add: () => openDialog(),
     edit: id => openDialog(id),
@@ -240,6 +258,11 @@
     const t = e.target.closest('#tabs button'); if (t) { Sound.play('tab'); setView(t.dataset.view); }
     const c = e.target.closest('#currency button');
     if (c && c.dataset.cur !== state.currency) { Sound.play('tab'); state.currency = c.dataset.cur; persist(); render(false); if (c.dataset.cur === 'INR') refreshRate(); }
+  });
+  document.addEventListener('change', e => {
+    if (e.target.id !== 'overviewRange') return;
+    if (!OVERVIEW_PERIODS[e.target.value]) return;
+    state.overviewRange = e.target.value; persist(); render(false);
   });
   function commitRate(inp, save) {
     const v = parseFloat(inp.value); editingRate = false;
@@ -474,8 +497,8 @@
 
   const SPECS = {
     rev(w, h) {
-      const list = G.sortByDate(state.commissions);
-      if (!list.length) return noData('No commissions yet', 'Revenue per commission', 'Every commission');
+      const period = overviewData(), list = G.sortByDate(period.commissions);
+      if (!list.length) return noData('No commissions in this period', 'Revenue per commission', period.label);
       const total = list.reduce((s, c) => s + c.price, 0), avg = total / list.length;
       const top = list.reduce((b, c, i) => (c.price > list[b].price ? i : b), 0);
       const tracked = list.filter(c => c.time > 0), hrs = tracked.reduce((s, c) => s + c.time, 0) / 36e5;
@@ -483,25 +506,25 @@
       const items = list.map(c => ({ label: short(c.name, 11), value: c.price * rate(),
         tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}${c.time >= 6e4 ? ` · ${dur(c.time)} tracked` : ''}${c.time >= 36e4 ? ` · ${money(c.price / (c.time / 36e5))}/hr` : ''}` }));
       const W = Math.max(w, list.length * 64 + 80);
-      return { title: 'Revenue per commission', sub: `${list.length} commission${list.length === 1 ? '' : 's'}, oldest to newest`,
+      return { title: 'Revenue per commission', sub: `${period.label} · ${list.length} commission${list.length === 1 ? '' : 's'}, oldest to newest`,
         chips: chip('Total', money(total)) + chip('Average', money(avg)) + chip('Highest', money(list[top].price)) + chip('Per tracked hour', perHr ? money(perHr) : '–'),
         svg: Charts.bars(items, { w: W, h, id: 'revB', big: true, maxLabels: Math.floor((W - 62) / 70), avg: { value: avg * rate(), tip: `Average · ${money(avg)} per commission` }, best: top, bestTip: `Top earner · ${esc(list[top].name)} · ${money(list[top].price)}` }),
         legend: `<span>${key}Average price</span><span>${dotR}Top earner</span>` };
     },
     cnt(w, h) {
-      const nowKey = G.monthKey(G.today()), months = G.monthlySeries(state.commissions, 12, nowKey);
+      const period = overviewData(), months = G.monthlySeries(period.commissions, period.months, period.nowKey);
       const idx = Object.fromEntries(months.map((m, i) => [m.key, i]));
-      const dots = state.commissions.filter(c => G.monthKey(c.date) in idx).map(c => ({ i: idx[G.monthKey(c.date)], price: c.price * rate(), tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}` }));
+      const dots = period.commissions.filter(c => G.monthKey(c.date) in idx).map(c => ({ i: idx[G.monthKey(c.date)], price: c.price * rate(), tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}` }));
       const count = months.reduce((s, m) => s + m.count, 0), bestM = months.reduce((b, m) => (m.count > b.count ? m : b), months[0]);
-      const avg = state.commissions.length ? state.commissions.reduce((s, c) => s + c.price, 0) / state.commissions.length : 0;
+      const avg = period.commissions.length ? period.commissions.reduce((s, c) => s + c.price, 0) / period.commissions.length : 0;
       const mi = months.map(m => ({ label: monthName(m.key), count: m.count, tip: `${monthName(m.key, true)} · ${m.count} commission${m.count === 1 ? '' : 's'} · ${money(m.revenue)}` }));
-      return { title: 'Commissions per month', sub: 'Last 12 months, with every commission’s price',
-        chips: chip('Last 12 months', count) + chip('Busiest month', bestM.count ? `${monthName(bestM.key)} · ${bestM.count}` : '–') + chip('Average / month', (count / 12).toFixed(1)) + chip('Average price', money(avg)),
+      return { title: 'Commissions per month', sub: `${period.label}, with each commission’s price`,
+        chips: chip(period.label, count) + chip('Busiest month', bestM.count ? `${monthName(bestM.key)} · ${bestM.count}` : '–') + chip('Average / month', (count / period.months).toFixed(1)) + chip('Average price', money(avg)),
         svg: Charts.combo(mi, dots, { w, h, id: 'cntB', big: true, avg: avg ? { value: avg * rate(), tip: `Average price · ${money(avg)}` } : null }),
         legend: `<span><i style="background:var(--accent)"></i>Commissions (left)</span><span><i style="background:var(--warm)"></i>Price per commission (right)</span><span>${key}Average price</span>` };
     },
     ddl(w, h) {
-      const ta = G.turnaround(state.commissions), dl = ta.withDeadline;
+      const period = overviewData(), ta = G.turnaround(period.commissions), dl = ta.withDeadline;
       if (!dl.length) return noData('Complete a pending commission that has a deadline', 'Deadline vs actual', 'Allotted time against what you took');
       const maxMs = Math.max(...dl.flatMap(i => [i.allotted, i.actual])), days = maxMs >= 48 * 36e5, div = days ? 864e5 : 36e5;
       const onTime = dl.filter(i => !i.late).length, sumA = dl.reduce((s, i) => s + i.actual, 0), sumF = dl.reduce((s, i) => s + i.focus, 0), avgA = sumA / dl.length;
@@ -566,7 +589,7 @@
     const now = Date.now();
     state.tasks.forEach(t => { const el = $(`[data-timer="${t.id}"]`); if (el) el.textContent = clock(G.taskElapsed(t, now)); });
     document.querySelectorAll('[data-due]').forEach(el => { const d = dueInfo(+el.dataset.due, now); el.textContent = d.text; el.className = 'due ' + d.cls; });
-    const tt = $('#totalTime'); if (tt) tt.textContent = hours(totalTime(now));
+    const tt = $('#totalTime'); if (tt) tt.textContent = hours(view === 'overview' ? overviewTime(overviewData()) : totalTime(now));
   }, 250);
 
   window.addEventListener('resize', movePill);
