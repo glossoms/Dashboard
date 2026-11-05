@@ -609,10 +609,12 @@
     const universeId = (url.pathname.match(/\/experiences\/(\d+)/i) || [])[1] || url.searchParams.get('universeId');
     return placeId || universeId ? { placeId, universeId } : null;
   }
+  // Roblox's public stats endpoints omit browser CORS headers, so a small read-only relay is required on GitHub Pages.
+  const ROBLOX_CORS_RELAY = 'https://proxy.cors.dev/';
   async function robloxJson(url) {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      const response = await fetch(ROBLOX_CORS_RELAY + url, { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error('Roblox returned ' + response.status);
       return await response.json();
     } finally { clearTimeout(timeout); }
@@ -640,7 +642,7 @@
       if (items.some(x => x.universeId === experience.universeId)) { error.textContent = 'That experience is already linked.'; button.disabled = false; button.textContent = 'Submit'; return; }
       experience.url = value; items.push(experience); addingExperienceClientId = null; persist(); render(false); toast('Experience linked');
     } catch (err) {
-      error.textContent = err.name === 'AbortError' ? 'Roblox took too long to respond. Try again.' : (err.message || 'Could not load public Roblox stats. Try the game link or place ID.');
+      error.textContent = err.name === 'AbortError' ? 'Roblox took too long to respond. Try again.' : err instanceof TypeError ? 'The stats relay could not be reached. Try again in a moment.' : (err.message || 'Could not load public Roblox stats. Try the game link or place ID.');
       button.disabled = false; button.textContent = 'Submit';
     }
   }
