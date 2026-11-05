@@ -40,10 +40,11 @@
   const robloxThumbCache = new Map();
   function getRobloxThumbnail(id) {
     if (!robloxThumbCache.has(id)) robloxThumbCache.set(id, (async () => {
-      const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(id)}&size=150x150&format=Png&isCircular=false`;
+      const upstream = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(id)}&size=150x150&format=Png&isCircular=false`;
+      const url = `https://proxy.cors.dev/${upstream}`;
       for (let attempt = 0; attempt < 4; attempt++) {
         try {
-          const response = await fetch(url, { cache: 'force-cache' });
+          const response = await fetch(url, { cache: 'force-cache', credentials: 'omit' });
           if (!response.ok) throw new Error('Thumbnail request failed');
           const json = await response.json(), entry = (json.data || []).find(x => String(x.targetId) === String(id)) || (json.data || [])[0];
           if (entry && entry.state === 'Completed' && entry.imageUrl) return entry.imageUrl;
@@ -58,16 +59,10 @@
   function loadRobloxAvatars(root = document) {
     root.querySelectorAll('img[data-roblox-id]').forEach(img => {
       const id = img.dataset.robloxId;
-      const fallback = () => {
-        if (!img.isConnected) return;
-        img.onerror = () => img.remove();
-        img.src = `https://www.roblox.com/headshot-thumbnail/image?userId=${encodeURIComponent(id)}&width=150&height=150&format=png`;
-        img.hidden = false;
-      };
       getRobloxThumbnail(id).then(url => {
         if (!img.isConnected) return;
-        if (!url) return fallback();
-        img.onerror = fallback; img.src = url; img.hidden = false;
+        if (!url) return;
+        img.onerror = () => img.remove(); img.src = url; img.hidden = false;
       });
     });
   }
