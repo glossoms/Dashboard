@@ -3,9 +3,10 @@
   let state = G.load();
   state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0, deadline: null }, t, { firstStart: t.firstStart || t.startedAt || (t.elapsed ? t.created : null) })); // migrate older items
   state.awaiting = (state.awaiting || []).map(c => Object.assign({}, c, { paymentMethod: 'wise' }));
+  state.percentages = state.percentages || [];
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
-  let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null;
+  let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null, editingPercentId = null;
   const persist = () => G.save(state);
   const syncBrand = () => { const brand = $('#brand'); if (brand) brand.textContent = state.name || 'Gloom'; };
 
@@ -19,6 +20,8 @@
   };
   const dur = ms => { const m = Math.round(ms / 60000); if (m < 1) return '<1m'; const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60; return d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`; };
   const dueInfo = (due, now = Date.now()) => { const diff = due - now; return diff < 0 ? { text: 'Overdue ' + dur(-diff), cls: 'late' } : { text: dur(diff) + ' left', cls: diff < 864e5 ? 'soon' : '' }; };
+  const nextMonthStart = (ts = Date.now()) => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(); };
+  const countdown = (ts, now = Date.now()) => { if (ts <= now) return 'Payout due'; const s = Math.ceil((ts - now) / 1000), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return `${d}d ${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`; };
   const toLocalInput = ts => { const d = new Date(ts), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
   const rateNote = () => {
     if (state.currency !== 'INR') return '';
@@ -95,6 +98,16 @@
     const series = G.monthlySeries(list, range.months, range.nowKey);
     const revenue = list.reduce((s, c) => s + c.price, 0), count = list.length, average = count ? revenue / count : 0;
     const timeMs = overviewTime(range);
+    const timedPaid = list.filter(c => c.payoutType !== 'monthly-percentage' && c.time > 0), trackedPaidMs = timedPaid.reduce((s, c) => s + c.time, 0), hourlyRevenue = timedPaid.reduce((s, c) => s + c.price, 0), hourly = trackedPaidMs ? hourlyRevenue / (trackedPaidMs / 36e5) : null;
+    const clientCounts = new Map(); list.filter(c => c.payoutType !== 'monthly-percentage').forEach(c => { if (c.clientId) clientCounts.set(c.clientId, (clientCounts.get(c.clientId) || 0) + 1); });
+    const knownClients = clientCounts.size, repeatClients = [...clientCounts.values()].filter(n => n > 1).length, retention = knownClients ? Math.round(repeatClients / knownClients * 100) : null;
+    const allNet = state.commissions.map(c => ({ ...c, price: recognizedAmount(c) })), monthPair = G.monthlySeries(allNet, 2, range.nowKey), previousMonth = monthPair[0], currentMonth = monthPair[1];
+    const growth = previousMonth.revenue ? (currentMonth.revenue - previousMonth.revenue) / previousMonth.revenue * 100 : null;
+    const growthValue = growth === null ? (currentMonth.revenue ? 'New' : '–') : `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%`;
+    const growthNote = previousMonth.revenue ? `${currentMonth.revenue >= previousMonth.revenue ? '+' : '−'}${money(Math.abs(currentMonth.revenue - previousMonth.revenue))} vs ${monthName(previousMonth.key, true)}` : `No ${monthName(previousMonth.key)} revenue to compare`;
+    const target = Number(state.revenueTarget) || 0, currentMonthRevenue = currentMonth.revenue;
+    const targetProgress = target > 0 ? Math.min(100, currentMonthRevenue / target * 100) : 0;
+    const revenueItems = series.map(m => ({ label: monthName(m.key), value: m.revenue * rate(), tip: `${monthName(m.key, true)} · revenue ${money(m.revenue)}` }));
     const barItems = sorted.slice(-12).map(c => ({ label: esc(c.name.length > 9 ? c.name.slice(0, 8) + '…' : c.name), value: c.price * rate(), tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}` }));
     const lineItems = series.map(m => ({ label: monthName(m.key), value: m.count, tip: `${monthName(m.key, true)} · ${m.count} commission${m.count === 1 ? '' : 's'}` }));
     const ta = G.turnaround(list), dl = ta.withDeadline.slice(-8);
@@ -110,21 +123,34 @@
       <div class="sub"><span class="muted">${count} paid commission${count === 1 ? '' : 's'} in this period</span></div>${rateNote()}</div>
       <button class="btn primary" data-act="add">${icon('plus')}<span>Commission</span></button>
     </section>
+    <div class="overview-section-label">${icon('grid')}<span>Performance</span></div>
     <section class="stats">
       ${stat('wallet', 'Paid commissions', count, 'in selected period', [count, 'int'])}
-      ${stat('grid', 'Average', money(average), 'per commission', [average, 'money'])}
+      ${stat('grid', 'Average commission value', money(average), 'per paid commission', [average, 'money'])}
       ${stat('clock', 'Time tracked', `<span id="totalTime">${hours(timeMs)}</span>`, 'in selected period')}
-      ${stat('up', 'Collected', money(revenue), 'in selected period', [revenue, 'money'])}
+      ${stat('up', 'Revenue growth', growthValue, growthNote)}
     </section>
+    <section class="stats insight-stats">
+      ${stat('clock', 'Average hourly earnings', hourly === null ? '–' : money(hourly), trackedPaidMs ? 'net revenue per tracked hour' : 'No paid work time tracked')}
+      ${stat('users', 'Client retention', retention === null ? '–' : `${retention}%`, knownClients ? `${repeatClients} of ${knownClients} clients returned` : 'No client-linked commissions in period')}
+      ${stat('up', 'Monthly target progress', target ? `${Math.round(targetProgress)}%` : 'Not set', target ? `${money(currentMonthRevenue)} of ${money(target)} this month` : 'Set a goal below')}
+    </section>
+    <div class="overview-section-label">${icon('wallet')}<span>Commission trends</span></div>
     <section class="charts">
-      <div class="card rise">${expandBtn('rev')}<h3>Revenue per commission</h3>${Charts.bars(barItems, { id: 'rev' })}</div>
-      <div class="card rise">${expandBtn('cnt')}<h3>Commissions per month</h3>${Charts.line(lineItems, { id: 'cnt' })}</div>
+      <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev' })}</div>
+      <div class="card rise">${expandBtn('cnt')}<div class="overview-card-title">${icon('grid')}<h3>Commissions per month</h3></div>${Charts.line(lineItems, { id: 'cnt' })}</div>
     </section>
-    <section class="charts"><div class="card rise">${expandBtn('ddl')}<div class="head"><h3>Deadline vs actual <span class="muted">(${big ? 'days' : 'hours'})</span></h3><span class="muted">Avg turnaround <b>${ta.items.length ? dur(ta.avg) : '–'}</b></span></div>
+    <div class="overview-section-label">${icon('flag')}<span>Delivery & monthly totals</span></div>
+    <section class="charts"><div class="card rise">${expandBtn('ddl')}<div class="head"><div class="overview-card-title">${icon('flag')}<h3>Deadline vs actual <span class="muted">(${big ? 'days' : 'hours'})</span></h3></div><span class="muted">Avg turnaround <b>${ta.items.length ? dur(ta.avg) : '–'}</b></span></div>
       ${Charts.grouped(gItems, { id: 'ddl' })}${gItems.length ? '<div class="legend"><span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span></div>' : ''}</div>
-    <div class="card rise"><h3>Monthly overview</h3>
+    <div class="card rise"><div class="overview-card-title">${icon('cal')}<h3>Monthly overview</h3></div>
       <div class="scroll"><table><thead><tr><th>Month</th><th>Count</th><th>Average</th><th class="r">Revenue</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${best ? `<div class="best">${icon('up')}<span>Top: ${bestClient ? `<b>${esc(bestClient.name)}</b> · ` : ''}<b>${esc(best.name)}</b> · ${money(best.price)}</span></div>` : ''}
+    </div></section>
+    <section class="charts target-chart"><div class="card rise">
+      <div class="target-head"><div><div class="overview-card-title">${icon('up')}<h3>Monthly revenue vs target</h3></div><div class="muted">Dotted line marks your monthly goal</div></div><form id="revenueTargetForm" class="target-form"><label for="revenueTargetInput">Goal (${SYM[state.currency]})</label><input id="revenueTargetInput" name="target" type="number" min="0" step="0.01" value="${target ? (Math.round(target * rate() * 100) / 100).toFixed(2) : ''}" placeholder="Set monthly goal"><button class="btn primary" type="submit">Save</button></form></div>
+      ${target ? `<div class="target-progress"><div class="target-progress-label"><span>This month</span><b>${money(currentMonthRevenue)} / ${money(target)}</b></div><div class="target-track"><i style="width:${targetProgress}%"></i></div></div>` : ''}
+      ${Charts.line(revenueItems, { id: 'targetRevenue', target: target * rate(), targetTip: `Monthly target · ${money(target)}` })}
     </div></section>`;
   }
   const stat = (ic, label, val, note, count) => `<div class="card stat rise">${icon(ic)}<div class="lab">${label}</div><div class="val"${count ? ` data-count="${count[0]}" data-kind="${count[1]}"` : ''}>${val}</div><div class="muted">${note}</div></div>`;
@@ -133,8 +159,9 @@
   function commissions() {
     const list = G.sortByDate(state.commissions).reverse();
     const awaiting = state.awaiting || [];
+    const percentages = state.percentages || [];
     const items = list.map((c, i) => `<li class="item rise" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.payoutType === 'monthly-percentage' ? ` · ${Number(c.payoutRate || 0)}% monthly payout` : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
       <div class="price">${money(c.grossPrice ?? c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
@@ -146,15 +173,18 @@
         ${editing ? `<div class="awaiting-price-edit"><label for="awaitingPrice">Gross amount (${SYM[state.currency]})</label><input id="awaitingPrice" type="number" min="0" step="0.01" value="${(Math.round((c.price || 0) * rate() * 100) / 100).toFixed(2)}"><button class="btn primary" data-act="saveawaiting" data-id="${c.id}">Save</button><button class="btn ghost" data-act="cancelawaiting">Cancel</button></div>` : `<div class="awaiting-payment"><div class="awaiting-gross"><button class="icon awaiting-edit-btn" data-act="editawaiting" data-id="${c.id}" aria-label="Edit expected amount" title="Edit expected amount">${icon('edit')}</button><span class="price">${money(c.price || 0)}</span></div><select class="payment-method" data-awaiting-method="${c.id}" aria-label="Payment method"><option value="wise"${(c.paymentMethod || 'wise') === 'wise' ? ' selected' : ''}>Wise</option><option value="paypal" disabled>PayPal · coming soon</option></select><button class="btn primary paid-btn" data-act="paid" data-id="${c.id}">${icon('check')}<span>Payment completed</span></button></div>`}
       </li>`;
     }).join('');
+    const percentItems = percentages.map(c => `<li class="item percentage-item">${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${Number(c.percentRate || 0)}% monthly · Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
+      ${editingPercentId === c.id ? `<div class="percent-entry"><label for="percentPayoutAmount">Amount received (USD)</label><input id="percentPayoutAmount" type="number" min="0.01" step="0.01" placeholder="0.00"><button class="btn primary" data-act="savepercent" data-id="${c.id}">Add payout</button><button class="btn ghost" data-act="cancelpercent">Cancel</button></div>` : `<button class="btn primary" data-act="recordpercent" data-id="${c.id}">${icon('plus')}<span>Record payout</span></button><button class="icon danger" data-act="endpercent" data-id="${c.id}" aria-label="End monthly percentage" title="End monthly percentage">${icon('close')}</button>`}</li>`).join('');
     return `<div class="bar-head"><div><h1>Commissions</h1>${rateNote()}</div><button class="btn primary" data-act="add">${icon('plus')}<span>Add</span></button></div>
       ${awaiting.length ? `<section class="awaiting-section"><div class="section-title"><h2>Awaiting payment</h2><span class="muted">${awaiting.length} finished</span></div><ul class="list card">${waitingItems}</ul></section>` : ''}
+      ${percentages.length ? `<section class="awaiting-section"><div class="section-title"><h2>Outstanding %</h2><span class="muted">Monthly payouts</span></div><ul class="list card">${percentItems}</ul></section>` : ''}
       ${list.length ? `<section class="commission-history"><div class="section-title"><h2>Paid commissions</h2></div><ul class="list card">${items}</ul></section>` : `<div class="empty card">${icon('wallet')}<p>${awaiting.length ? 'No paid commissions yet' : 'No commissions yet'}</p></div>`}`;
   }
 
   function taskItem(t) {
     const running = !!t.startedAt;
     return `<li class="item task ${running ? 'running' : ''}">
-      ${avatar(clientOf(t.clientId), 'sm')}<div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${clientOf(t.clientId) ? esc(clientOf(t.clientId).name) + ' · ' : ''}${money(t.price || 0)}${t.deadline ? (d => ` · <span class="due ${d.cls}" data-due="${t.deadline}">${d.text}</span>`)(dueInfo(t.deadline)) : ''}</div></div>
+      ${avatar(clientOf(t.clientId), 'sm')}<div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${clientOf(t.clientId) ? esc(clientOf(t.clientId).name) + ' · ' : ''}${t.rateType === 'percent' ? `${Number(t.percentRate || 0)}% monthly` : money(t.price || 0)}${t.deadline ? (d => ` · <span class="due ${d.cls}" data-due="${t.deadline}">${d.text}</span>`)(dueInfo(t.deadline)) : ''}</div></div>
       <span class="time" data-timer="${t.id}">${clock(G.taskElapsed(t))}</span>
       <button class="icon ${running ? 'live' : ''}" data-act="${running ? 'pause' : 'start'}" data-id="${t.id}" aria-label="${running ? 'Pause' : 'Start'}">${icon(running ? 'pause' : 'play')}</button>
       <button class="icon" data-act="reset" data-id="${t.id}" aria-label="Reset timer">${icon('reset')}</button>
@@ -167,6 +197,7 @@
     return `<div class="bar-head"><div><h1>Pending</h1>${rateNote()}</div></div>
       <form class="newtask card" id="newTask" autocomplete="off">
         <input name="t" placeholder="New pending commission" maxlength="80" required aria-label="Commission name">
+        <div class="pay-picker" role="group" aria-label="Payment type"><button type="button" class="pay-option on" data-pay-type="fixed" aria-pressed="true">Fixed</button><button type="button" class="pay-option" data-pay-type="percent" aria-pressed="false">Monthly %</button></div><input type="hidden" name="pay" value="fixed">
         <input name="p" class="pr" type="number" min="0" step="0.01" placeholder="Price ${SYM[state.currency]}" required inputmode="decimal" aria-label="Price">
         ${state.clients.length ? `<select name="c" class="cl" aria-label="Client">${clientOpts('')}</select>` : ''}
         <input name="d" class="dl" type="datetime-local" aria-label="Deadline" title="Deadline (optional)">
@@ -178,6 +209,7 @@
   function render(animate = true) {
     const el = $('#view');
     el.className = animate ? 'fade' : 'still';
+    el.dataset.view = view;
     el.innerHTML = { today: todayView, overview, commissions, tasks, clients: clientsView }[view]();
     loadRobloxAvatars(el);
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
@@ -215,19 +247,22 @@
     const c = kind === 'task' ? task(id) : state.commissions.find(x => x.id === id);
     $('#dlgTitle').textContent = kind === 'task' ? 'Edit pending commission' : (c ? 'Edit commission' : 'New commission');
     $('#dateLabel').hidden = kind === 'task'; $('#dueLabel').hidden = kind !== 'task'; form.date.required = kind !== 'task';
-    $('#priceText').textContent = `Price (${state.currency})`;
+    const percentTask = kind === 'task' && c && c.rateType === 'percent';
+    $('#priceText').textContent = percentTask ? 'Monthly percentage rate (%)' : `Price (${state.currency})`;
+    form.price.max = percentTask ? '100' : '';
     form.client.innerHTML = clientOpts(c ? c.clientId : ''); $('#clientLabel').hidden = !state.clients.length; Sound.play('open');
-    const shown = c ? Math.round(c.price * rate() * 100) / 100 : '';
+    const shown = c ? (percentTask ? c.percentRate : Math.round(c.price * rate() * 100) / 100) : '';
     form.name.value = c ? (c.name || c.title) : ''; form.price.value = shown; form.price.dataset.orig = shown; form.price.dataset.usd = c ? c.price : '';
     form.date.value = (c && c.date) || G.today(); form.due.value = c && c.deadline ? toLocalInput(c.deadline) : '';
     dlg.showModal(); form.name.focus();
   }
   form.addEventListener('submit', e => {
     const name = form.name.value.trim(), entered = parseFloat(form.price.value), date = form.date.value, isTask = editingKind === 'task';
-    if (!name || !isFinite(entered) || entered < 0 || (!isTask && !date)) { e.preventDefault(); return; }
+    const currentTask = isTask ? task(editingId) : null, percentTask = !!(currentTask && currentTask.rateType === 'percent');
+    if (!name || !isFinite(entered) || entered < 0 || (percentTask && entered > 100) || (!isTask && !date)) { e.preventDefault(); return; }
     const unchanged = form.price.dataset.usd !== '' && entered === +form.price.dataset.orig;
-    const price = unchanged ? +form.price.dataset.usd : Math.round((entered / rate()) * 1e4) / 1e4;
-    if (isTask) Object.assign(task(editingId), { title: name, price, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null });
+    const price = percentTask ? 0 : unchanged ? +form.price.dataset.usd : Math.round((entered / rate()) * 1e4) / 1e4;
+    if (isTask) Object.assign(currentTask, percentTask ? { title: name, percentRate: entered, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null } : { title: name, price, rateType: 'fixed', percentRate: null, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null });
     else if (editingId) {
       const existing = state.commissions.find(c => c.id === editingId);
       if (existing.netPrice != null) {
@@ -260,6 +295,16 @@
     editawaiting: id => { editingAwaitingId = id; render(false); $('#awaitingPrice').focus(); $('#awaitingPrice').select(); },
     saveawaiting: id => { const c = state.awaiting.find(x => x.id === id), entered = parseFloat($('#awaitingPrice').value); if (!c || !isFinite(entered) || entered < 0) return; c.price = Math.round((entered / rate()) * 1e4) / 1e4; editingAwaitingId = null; persist(); render(false); },
     cancelawaiting: () => { editingAwaitingId = null; render(false); },
+    recordpercent: id => { editingPercentId = id; render(false); $('#percentPayoutAmount').focus(); },
+    savepercent: id => {
+      const c = state.percentages.find(x => x.id === id), amount = parseFloat($('#percentPayoutAmount').value);
+      if (!c || !isFinite(amount) || amount <= 0) return;
+      state.commissions.push({ id: G.uid(), name: c.name, price: Math.round(amount * 100) / 100, date: G.today(), time: 0, created: Date.now(), clientId: c.clientId || null, payoutRate: c.percentRate, payoutType: 'monthly-percentage' });
+      c.lastPayout = Date.now(); c.nextPaymentAt = nextMonthStart(Date.now()); editingPercentId = null;
+      persist(); render(false); toast('Monthly payout added to Overview');
+    },
+    cancelpercent: () => { editingPercentId = null; render(false); },
+    endpercent: id => { const c = state.percentages.find(x => x.id === id); if (c && confirm(`End monthly percentage payments for “${c.name}”?`)) { state.percentages = state.percentages.filter(x => x.id !== id); persist(); render(false); } },
     add: () => openDialog(),
     edit: id => openDialog(id),
     del: id => { const c = state.commissions.find(x => x.id === id); if (c && confirm(`Delete “${c.name}”?`)) { state.commissions = state.commissions.filter(x => x.id !== id); persist(); render(false); } },
@@ -282,7 +327,7 @@
     delclient: id => {
       const c = clientOf(id); if (!c || !confirm(`Delete “${c.name}”? Their commissions are kept.`)) return;
       state.clients = state.clients.filter(x => x.id !== id);
-      state.commissions.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.awaiting.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.tasks.forEach(x => { if (x.clientId === id) x.clientId = null; });
+      state.commissions.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.awaiting.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.percentages.forEach(x => { if (x.clientId === id) x.clientId = null; }); state.tasks.forEach(x => { if (x.clientId === id) x.clientId = null; });
       persist(); render(false);
     },
     editrate: () => { editingRate = true; render(false); },
@@ -290,9 +335,10 @@
     complete: id => {
       const t = task(id); if (!t) return;
       pauseT(t);
-      state.awaiting.unshift({ id: t.id, name: t.title, price: t.price || 0, paymentMethod: 'wise', finishedDate: G.today(), time: t.elapsed, created: t.created || Date.now(), workStart: t.firstStart || t.created, deadline: t.deadline || null, completedAt: Date.now(), clientId: t.clientId || null });
+      if (t.rateType === 'percent') state.percentages.unshift({ id: G.uid(), name: t.title, percentRate: t.percentRate || 0, clientId: t.clientId || null, created: Date.now(), nextPaymentAt: nextMonthStart(Date.now()), payoutCount: 0 });
+      else state.awaiting.unshift({ id: t.id, name: t.title, price: t.price || 0, paymentMethod: 'wise', finishedDate: G.today(), time: t.elapsed, created: t.created || Date.now(), workStart: t.firstStart || t.created, deadline: t.deadline || null, completedAt: Date.now(), clientId: t.clientId || null });
       state.tasks = state.tasks.filter(x => x.id !== id);
-      persist(); render(false); toast('Moved to awaiting payment');
+      persist(); render(false); toast(t.rateType === 'percent' ? 'Added to outstanding monthly percentages' : 'Moved to awaiting payment');
     },
     paid: id => {
       const c = (state.awaiting || []).find(x => x.id === id); if (!c) return;
@@ -304,6 +350,15 @@
   };
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (b) { const k = b.dataset.act in SOUND ? SOUND[b.dataset.act] : 'tap'; if (k) Sound.play(k); actions[b.dataset.act](b.dataset.id, b); }
+    const payChoice = e.target.closest('[data-pay-type]');
+    if (payChoice) {
+      const form = payChoice.closest('#newTask'), percent = payChoice.dataset.payType === 'percent';
+      if (form) {
+        form.elements.namedItem('pay').value = percent ? 'percent' : 'fixed';
+        form.querySelectorAll('[data-pay-type]').forEach(btn => { const selected = btn === payChoice; btn.classList.toggle('on', selected); btn.setAttribute('aria-pressed', String(selected)); });
+        const price = form.elements.namedItem('p'); price.max = percent ? '100' : ''; price.placeholder = percent ? 'Rate (%)' : `Price ${SYM[state.currency]}`; price.setAttribute('aria-label', percent ? 'Monthly percentage rate' : 'Price');
+      }
+    }
     const t = e.target.closest('#tabs button'); if (t) { Sound.play('tab'); setView(t.dataset.view); }
     const c = e.target.closest('#currency button');
     if (c && c.dataset.cur !== state.currency) { Sound.play('tab'); state.currency = c.dataset.cur; persist(); render(false); if (c.dataset.cur === 'INR') refreshRate(); }
@@ -346,12 +401,18 @@
   }
   document.addEventListener('submit', e => {
     const fid = e.target.id;
+    if (fid === 'revenueTargetForm') {
+      e.preventDefault();
+      const value = parseFloat(e.target.elements.namedItem('target').value);
+      if (!isFinite(value) || value < 0) return;
+      state.revenueTarget = Math.round((value / rate()) * 1e4) / 1e4; persist(); render(false); return;
+    }
     if (fid === 'newTodo' || fid === 'newEvent') { e.preventDefault(); return fid === 'newTodo' ? addTodo(e.target) : addEvent(e.target); }
     if (fid !== 'newTask') return;
     e.preventDefault();
-    const title = e.target.t.value.trim(), entered = parseFloat(e.target.p.value), d = e.target.d.value;
-    if (!title || !isFinite(entered) || entered < 0) return;
-    state.tasks.unshift({ id: G.uid(), title, price: Math.round((entered / rate()) * 1e4) / 1e4, deadline: d ? new Date(d).getTime() : null, elapsed: 0, startedAt: null, firstStart: null, clientId: e.target.c ? e.target.c.value || null : null, created: Date.now() });
+    const title = e.target.t.value.trim(), entered = parseFloat(e.target.p.value), d = e.target.d.value, percent = e.target.elements.namedItem('pay').value === 'percent';
+    if (!title || !isFinite(entered) || entered < 0 || (percent && entered > 100)) return;
+    state.tasks.unshift({ id: G.uid(), title, price: percent ? 0 : Math.round((entered / rate()) * 1e4) / 1e4, rateType: percent ? 'percent' : 'fixed', percentRate: percent ? entered : null, deadline: d ? new Date(d).getTime() : null, elapsed: 0, startedAt: null, firstStart: null, clientId: e.target.c ? e.target.c.value || null : null, created: Date.now() });
     persist(); Sound.play('add'); render(false); $('#newTask input').focus();
   });
 
@@ -376,7 +437,7 @@
     const evItem = (e, label) => `<li class="item"><span class="when">${label}</span><div class="grow name">${esc(e.title)}</div><button class="icon danger" data-act="delevent" data-id="${e.id}" aria-label="Delete">${icon('trash')}</button></li>`;
     const dueItem = t => {
       const d = dueInfo(t.deadline, nowMs), s = G.dueStatus(t.deadline, nowMs), cl = clientOf(t.clientId);
-      return `<li class="item"><span class="flagic ${s}">${icon('flag')}</span>${avatar(cl, 'sm')}<div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${money(t.price || 0)} · <span class="due ${d.cls}" data-due="${t.deadline}">${d.text}</span></div></div><span class="tag ${s}">${s === 'overdue' ? 'Overdue' : s === 'today' ? 'Today' : 'This week'}</span></li>`;
+      return `<li class="item"><span class="flagic ${s}">${icon('flag')}</span>${avatar(cl, 'sm')}<div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${t.rateType === 'percent' ? `${Number(t.percentRate || 0)}% monthly` : money(t.price || 0)} · <span class="due ${d.cls}" data-due="${t.deadline}">${d.text}</span></div></div><span class="tag ${s}">${s === 'overdue' ? 'Overdue' : s === 'today' ? 'Today' : 'This week'}</span></li>`;
     };
     const empty = msg => `<div class="empty slim"><p>${msg}</p></div>`;
 
@@ -648,6 +709,7 @@
     document.querySelectorAll('[data-due]').forEach(el => { const d = dueInfo(+el.dataset.due, now); el.textContent = d.text; el.className = 'due ' + d.cls; });
     const tt = $('#totalTime'); if (tt) tt.textContent = hours(view === 'overview' ? overviewTime(overviewData()) : totalTime(now));
   }, 250);
+  setInterval(() => document.querySelectorAll('[data-next-payout]').forEach(el => { el.textContent = countdown(+el.dataset.nextPayout); }), 1000);
 
   window.addEventListener('resize', movePill);
   window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (VIEWS.includes(v) && v !== view) { view = v; render(); } });

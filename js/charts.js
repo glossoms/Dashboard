@@ -57,13 +57,14 @@
 
   function line(items, o = {}) {
     if (!items.length) return empty('No data yet');
-    const c = ctx(o), max = Math.max(4, Math.ceil(Math.max(...items.map(i => i.value)) / 4) * 4); // whole-number ticks
+    const c = ctx(o), max = Math.max(4, Math.ceil(Math.max(...items.map(i => i.value), o.target || 0) / 4) * 4);
     const step = items.length > 1 ? c.iw / (items.length - 1) : 0;
     const pts = items.map((it, i) => [c.p.l + (items.length > 1 ? step * i : c.iw / 2), yOf(c, it.value, max)]);
     const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
     const area = `${d} L${pts[pts.length - 1][0]} ${c.p.t + c.ih} L${pts[0][0]} ${c.p.t + c.ih} Z`;
     let s = `${open(c)}<defs><linearGradient id="${c.id}-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".25"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>${frame(c, max)}`;
     s += `<path class="area" d="${area}" fill="url(#${c.id}-area)"/><path class="stroke" pathLength="1" d="${d}"/>`;
+    if (o.target > 0) s += dash(c, yOf(c, o.target, max), o.targetTip || `Target · ${compact(o.target)}`);
     pts.forEach((p, i) => {
       s += `<circle class="dot" data-tip="${q(items[i].tip)}" cx="${p[0]}" cy="${p[1]}" r="5" style="animation-delay:${400 + i * 60}ms"/>`;
       s += `<text class="axis" x="${p[0]}" y="${c.h - 10}" text-anchor="middle">${items[i].label}</text>`;
