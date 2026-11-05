@@ -267,7 +267,6 @@
   /* ---------- Today (home) ---------- */
   const greet = (d = new Date()) => { const h = d.getHours(); return h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
   const longDate = (d = new Date()) => d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-  const timeStr = (d = new Date()) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   function todayView() {
     const now = new Date(), nowMs = now.getTime(), ymd = G.today(now), st = G.stats(state.commissions, G.monthKey(ymd));
@@ -315,7 +314,7 @@
           <div class="ncol"><div class="nl">Today</div><textarea data-note="${ymd}" placeholder="Wins, blockers, ideas…">${esc(state.notes[ymd] || '')}</textarea></div>
         </div></div>`}
     ].filter(w => w.html && !layout.hidden.includes(w.id));
-    return `<section class="today-head rise"><div><div class="eyebrow">${longDate(now)}</div><h1>${greet(now)}</h1><div class="layout-hint">Hold any card for 3 seconds to arrange your Today page</div></div><div class="today-heading-tools"><div class="clock" id="clock">${timeStr(now)}</div><button class="icon layout-toggle" data-act="layoutmode" aria-label="Customize Today page" title="Customize Today page">${icon('grid')}</button></div></section>
+    return `<section class="today-head rise"><div><div class="eyebrow">${longDate(now)}</div><h1>${greet(now)}</h1><div class="layout-hint">Hold any card for 3 seconds to arrange your Today page</div></div><div class="today-heading-tools"><button class="icon layout-toggle" data-act="layoutmode" aria-label="Customize Today page" title="Customize Today page">${icon('grid')}</button></div></section>
       ${running.length ? `<section class="live card rise"><span class="pulse"></span><div class="grow"><div class="muted">Working on${running.length > 1 ? ` · +${running.length - 1} more` : ''}</div><div class="name">${esc(running[0].title)}</div></div><span class="time" data-timer="${running[0].id}">${clock(G.taskElapsed(running[0], nowMs))}</span><button class="icon live" data-act="pause" data-id="${running[0].id}" aria-label="Pause">${icon('pause')}</button></section>` : ''}
       <div class="today-layout">${ordered(widgets).map(w => `<div class="today-widget" data-widget="${w.id}" draggable="false"><button class="widget-remove" data-act="togglewidget" data-id="${w.id}" aria-label="Hide ${w.label}">−</button>${w.html}</div>`).join('')}</div>
       <div class="widget-picker" aria-label="Hidden Today sections"></div>`;
@@ -540,7 +539,6 @@
     const now = Date.now();
     state.tasks.forEach(t => { const el = $(`[data-timer="${t.id}"]`); if (el) el.textContent = clock(G.taskElapsed(t, now)); });
     document.querySelectorAll('[data-due]').forEach(el => { const d = dueInfo(+el.dataset.due, now); el.textContent = d.text; el.className = 'due ' + d.cls; });
-    const ck = $('#clock'); if (ck) ck.textContent = timeStr(new Date(now));
     const tt = $('#totalTime'); if (tt) tt.textContent = hours(totalTime(now));
   }, 250);
 
