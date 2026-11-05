@@ -361,7 +361,7 @@ body.splashing{overflow:hidden}
 .experience-error{min-height:15px;color:var(--red);font-size:11px}
 .need{display:inline-grid;place-items:center;width:21px;height:21px;padding:0;border-radius:50%;background:color-mix(in srgb,var(--warm) 15%,transparent);color:var(--warm);vertical-align:middle}
 .need .ic{width:13px;height:13px;stroke-width:2}
-textarea.attn{border:1.5px dotted color-mix(in srgb,var(--warm) 78%,transparent);outline:1px dotted color-mix(in srgb,var(--warm) 58%,transparent);outline-offset:3px}
+textarea.attn{border:1.5px dotted color-mix(in srgb,var(--warm) 78%,transparent)}
 textarea.attn:focus{border-style:solid;outline:0}
 @media(max-width:560px){.experience-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}.experience-add{min-height:112px}.experience-total{gap:4px 6px}.experience-total strong{font-size:30px}.experience-input-row{align-items:stretch;flex-direction:column}.experience-input-row .btn{justify-content:center}}
 @media(hover:none){.experience-remove{opacity:1}}

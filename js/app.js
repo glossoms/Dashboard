@@ -361,7 +361,7 @@
     addclient: () => openClient(),
     editclient: id => openClient(id),
     toggleclient: id => { openClientId = openClientId === id ? null : id; render(false); },
-    addexperience: id => { openClientId = id; addingExperienceClientId = addingExperienceClientId === id ? null : id; render(false); const input = $('#experienceUrl'); if (input) input.focus(); },
+    addexperience: id => { addingExperienceClientId = addingExperienceClientId === id ? null : id; render(false); const input = $('#experienceUrl'); if (input) input.focus(); },
     removeexperience: (id, btn) => { const c = clientOf(btn.dataset.client); if (!c) return; c.experiences = (c.experiences || []).filter(x => x.universeId !== btn.dataset.place); persist(); render(false); },
     refreshexperiences: id => refreshClientExperiences(id),
     delclient: id => {
@@ -672,15 +672,15 @@
       const experiences = c.experiences || [], totalVisits = experiences.reduce((n, x) => n + (Number(x.visits) || 0), 0), totalPlaying = experiences.reduce((n, x) => n + (Number(x.playing) || 0), 0);
       const count = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
       const experienceCards = experiences.map(x => `<article class="experience-card"><div class="experience-game-name">${esc(x.name)}</div><div class="experience-game-stats"><span><b>${count(Number(x.visits) || 0)}</b> visits</span><span><b>${count(Number(x.playing) || 0)}</b> playing</span></div><button class="experience-remove" data-act="removeexperience" data-client="${esc(c.id)}" data-place="${esc(x.universeId)}" aria-label="Remove ${esc(x.name)}">×</button></article>`).join('');
-      const experiencePanel = open ? `<section class="client-experiences"><div class="experience-title"><h3>Experiences contributed to</h3>${experiences.length ? `<button class="experience-refresh" data-act="refreshexperiences" data-id="${esc(c.id)}">Refresh stats</button>` : ''}</div>
+      const experiencePanel = `<section class="client-experiences"><div class="experience-title"><h3>Experiences contributed to</h3>${experiences.length ? `<button class="experience-refresh" data-act="refreshexperiences" data-id="${esc(c.id)}">Refresh stats</button>` : ''}</div>
         ${experiences.length ? `<div class="experience-total"><span>Contributed to</span><strong title="${totalVisits.toLocaleString()}">${count(totalVisits)}</strong><span>visits and</span><strong title="${totalPlaying.toLocaleString()}">${count(totalPlaying)}</strong><span>CCU</span></div>` : '<p class="experience-hint">Link Roblox experiences to see their combined reach.</p>'}
         <div class="experience-grid">${experienceCards}${addingExperienceClientId === c.id ? `<form class="experience-form" id="experienceForm" data-client="${esc(c.id)}"><label for="experienceUrl">Roblox game link or place ID</label><div class="experience-input-row"><input id="experienceUrl" name="url" required placeholder="roblox.com/games/…" autocomplete="url"><button class="btn primary" type="submit">Submit</button></div><p class="experience-error" aria-live="polite"></p></form>` : `<button class="experience-add" data-act="addexperience" data-id="${esc(c.id)}"><span>+</span><small>Link an experience</small></button>`}</div>
-        </section>` : '';
+        </section>`;
       return `<div class="card client rise ${open ? 'open' : ''}">
         <div class="c-top" data-act="toggleclient" data-id="${c.id}">${avatar(c, 'lg')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${c.roblox ? 'Roblox · ' + c.roblox : 'No Roblox ID'}</div></div>
           <button class="icon" data-act="editclient" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button><button class="icon danger" data-act="delclient" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></div>
         <div class="c-stats"><div><b>${s.count}</b><span>commissions</span></div><div><b>${money(s.revenue)}</b><span>earned</span></div><div><b>${pend.length}</b><span>in progress</span></div></div>
-        ${open ? (rows ? `<ul class="c-list">${rows}</ul>` : '<div class="muted c-none">Nothing yet</div>') + experiencePanel : ''}</div>`;
+        ${experiencePanel}${open ? (rows ? `<ul class="c-list">${rows}</ul>` : '<div class="muted c-none">Nothing yet</div>') : ''}</div>`;
     };
     return `<div class="bar-head"><h1>Clients</h1><button class="btn primary" data-act="addclient">${icon('plus')}<span>Add</span></button></div>
       ${list.length ? `<div class="cgrid">${list.map(card).join('')}</div>` : `<div class="empty card">${icon('users')}<p>No clients yet</p></div>`}`;
