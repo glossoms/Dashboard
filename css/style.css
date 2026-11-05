@@ -353,3 +353,5 @@ body.splashing{overflow:hidden}
 .card:hover,.stat:hover{transform:translateY(-3px);box-shadow:0 1px 2px rgba(0,0,0,.04),0 16px 42px rgba(0,0,0,.09)}
 @media(hover:none){.card:hover,.stat:hover{transform:none}}
 @media(max-width:560px){#view[data-view="overview"]{gap:18px}.overview-section-label{margin-bottom:-7px}.overview-card-title{margin-bottom:10px}}
+
+.task-rate-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-2px 0 14px}.task-rate-picker .pay-picker{flex:none}.task-rate-picker .pay-option{min-width:82px}

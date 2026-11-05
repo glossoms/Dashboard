@@ -201,8 +201,11 @@
         ${editing ? `<div class="awaiting-price-edit"><label for="awaitingPrice">Gross amount (${SYM[state.currency]})</label><input id="awaitingPrice" type="number" min="0" step="0.01" value="${(Math.round((c.price || 0) * rate() * 100) / 100).toFixed(2)}"><button class="btn primary" data-act="saveawaiting" data-id="${c.id}">Save</button><button class="btn ghost" data-act="cancelawaiting">Cancel</button></div>` : `<div class="awaiting-payment"><div class="awaiting-gross"><button class="icon awaiting-edit-btn" data-act="editawaiting" data-id="${c.id}" aria-label="Edit expected amount" title="Edit expected amount">${icon('edit')}</button><span class="price">${money(c.price || 0)}</span></div><select class="payment-method" data-awaiting-method="${c.id}" aria-label="Payment method"><option value="wise"${(c.paymentMethod || 'wise') === 'wise' ? ' selected' : ''}>Wise</option><option value="paypal" disabled>PayPal · coming soon</option></select><button class="btn primary paid-btn" data-act="paid" data-id="${c.id}">${icon('check')}<span>Payment completed</span></button></div>`}
       </li>`;
     }).join('');
-    const percentItems = percentages.map(c => `<li class="item percentage-item">${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${Number(c.percentRate || 0)}% monthly · Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
-      ${editingPercentId === c.id ? `<div class="percent-entry"><label for="percentPayoutAmount">Amount received (USD)</label><input id="percentPayoutAmount" type="number" min="0.01" step="0.01" placeholder="0.00"><button class="btn primary" data-act="savepercent" data-id="${c.id}">Add payout</button><button class="btn ghost" data-act="cancelpercent">Cancel</button></div>` : `<button class="btn primary" data-act="recordpercent" data-id="${c.id}">${icon('plus')}<span>Record payout</span></button><button class="icon danger" data-act="endpercent" data-id="${c.id}" aria-label="End monthly percentage" title="End monthly percentage">${icon('close')}</button>`}</li>`).join('');
+    const percentItems = percentages.map(c => {
+      const works = c.works && c.works.length ? c.works : [{ name: c.name }], projectNames = works.map(w => w.name).join(' · '), who = clientOf(c.clientId);
+      return `<li class="item percentage-item">${avatar(who, 'sm')}<div class="grow"><div class="name">${who ? esc(who.name) : esc(projectNames)}</div><div class="muted">${Number(c.percentRate || 0)}% monthly · ${works.length} finished work${works.length === 1 ? '' : 's'} · ${esc(projectNames)}</div><div class="muted">Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
+      ${editingPercentId === c.id ? `<div class="percent-entry"><label for="percentPayoutAmount">Amount received (USD)</label><input id="percentPayoutAmount" type="number" min="0.01" step="0.01" placeholder="0.00"><button class="btn primary" data-act="savepercent" data-id="${c.id}">Add payout</button><button class="btn ghost" data-act="cancelpercent">Cancel</button></div>` : `<button class="btn primary" data-act="recordpercent" data-id="${c.id}">${icon('plus')}<span>Record payout</span></button><button class="icon danger" data-act="endpercent" data-id="${c.id}" aria-label="End monthly percentage" title="End monthly percentage">${icon('close')}</button>`}</li>`;
+    }).join('');
     return `<div class="bar-head"><div><h1>Commissions</h1>${rateNote()}</div><button class="btn primary" data-act="add">${icon('plus')}<span>Add</span></button></div>
       ${awaiting.length ? `<section class="awaiting-section"><div class="section-title"><h2>Awaiting payment</h2><span class="muted">${awaiting.length} finished</span></div><ul class="list card">${waitingItems}</ul></section>` : ''}
       ${percentages.length ? `<section class="awaiting-section"><div class="section-title"><h2>Outstanding %</h2><span class="muted">Monthly payouts</span></div><ul class="list card">${percentItems}</ul></section>` : ''}
@@ -268,14 +271,17 @@
 
   /* ---------- Dialog (commission or pending commission) ---------- */
   const dlg = $('#dlg'), form = $('#form');
-  let editingKind = 'commission';
+  let editingKind = 'commission', editingTaskRateType = 'fixed';
   const task = id => state.tasks.find(t => t.id === id);
   function openDialog(id, kind = 'commission') {
     editingKind = kind; editingId = id || null;
     const c = kind === 'task' ? task(id) : state.commissions.find(x => x.id === id);
     $('#dlgTitle').textContent = kind === 'task' ? 'Edit pending commission' : (c ? 'Edit commission' : 'New commission');
     $('#dateLabel').hidden = kind === 'task'; $('#dueLabel').hidden = kind !== 'task'; form.date.required = kind !== 'task';
-    const percentTask = kind === 'task' && c && c.rateType === 'percent';
+    editingTaskRateType = kind === 'task' && c && c.rateType === 'percent' ? 'percent' : 'fixed';
+    $('#taskRatePicker').hidden = kind !== 'task';
+    document.querySelectorAll('[data-edit-pay]').forEach(btn => { const selected = btn.dataset.editPay === editingTaskRateType; btn.classList.toggle('on', selected); btn.setAttribute('aria-pressed', String(selected)); });
+    const percentTask = editingTaskRateType === 'percent' && kind === 'task';
     $('#priceText').textContent = percentTask ? 'Monthly percentage rate (%)' : `Price (${state.currency})`;
     form.price.max = percentTask ? '100' : '';
     form.client.innerHTML = clientOpts(c ? c.clientId : ''); $('#clientLabel').hidden = !state.clients.length; Sound.play('open');
@@ -286,11 +292,11 @@
   }
   form.addEventListener('submit', e => {
     const name = form.name.value.trim(), entered = parseFloat(form.price.value), date = form.date.value, isTask = editingKind === 'task';
-    const currentTask = isTask ? task(editingId) : null, percentTask = !!(currentTask && currentTask.rateType === 'percent');
+    const currentTask = isTask ? task(editingId) : null, percentTask = isTask && editingTaskRateType === 'percent';
     if (!name || !isFinite(entered) || entered < 0 || (percentTask && entered > 100) || (!isTask && !date)) { e.preventDefault(); return; }
     const unchanged = form.price.dataset.usd !== '' && entered === +form.price.dataset.orig;
     const price = percentTask ? 0 : unchanged ? +form.price.dataset.usd : Math.round((entered / rate()) * 1e4) / 1e4;
-    if (isTask) Object.assign(currentTask, percentTask ? { title: name, percentRate: entered, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null } : { title: name, price, rateType: 'fixed', percentRate: null, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null });
+    if (isTask) Object.assign(currentTask, percentTask ? { title: name, price: 0, rateType: 'percent', percentRate: entered, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null } : { title: name, price, rateType: 'fixed', percentRate: null, deadline: form.due.value ? new Date(form.due.value).getTime() : null, clientId: form.client.value || null });
     else if (editingId) {
       const existing = state.commissions.find(c => c.id === editingId);
       if (existing.netPrice != null) {
@@ -327,8 +333,9 @@
     savepercent: id => {
       const c = state.percentages.find(x => x.id === id), amount = parseFloat($('#percentPayoutAmount').value);
       if (!c || !isFinite(amount) || amount <= 0) return;
-      state.commissions.push({ id: G.uid(), name: c.name, price: Math.round(amount * 100) / 100, date: G.today(), time: 0, created: Date.now(), clientId: c.clientId || null, payoutRate: c.percentRate, payoutType: 'monthly-percentage' });
-      c.lastPayout = Date.now(); c.nextPaymentAt = nextMonthStart(Date.now()); editingPercentId = null;
+      const workNames = c.works && c.works.length ? c.works.map(w => w.name) : [c.name];
+      state.commissions.push({ id: G.uid(), name: workNames.join(', '), price: Math.round(amount * 100) / 100, date: G.today(), time: 0, created: Date.now(), clientId: c.clientId || null, payoutRate: c.percentRate, payoutWorkCount: workNames.length, payoutType: 'monthly-percentage' });
+      c.lastPayout = Date.now(); c.nextPaymentAt = nextMonthStart(Date.now()); c.payoutCount = (c.payoutCount || 0) + 1; editingPercentId = null;
       persist(); render(false); toast('Monthly payout added to Overview');
     },
     cancelpercent: () => { editingPercentId = null; render(false); },
@@ -363,7 +370,13 @@
     complete: id => {
       const t = task(id); if (!t) return;
       pauseT(t);
-      if (t.rateType === 'percent') state.percentages.unshift({ id: G.uid(), name: t.title, percentRate: t.percentRate || 0, clientId: t.clientId || null, created: Date.now(), nextPaymentAt: nextMonthStart(Date.now()), payoutCount: 0 });
+      if (t.rateType === 'percent') {
+        const rate = Number(t.percentRate || 0), existing = t.clientId && state.percentages.find(p => p.clientId === t.clientId && Number(p.percentRate) === rate);
+        if (existing) {
+          if (!existing.works || !existing.works.length) existing.works = [{ name: existing.name, finishedAt: existing.created || Date.now() }];
+          existing.works.push({ name: t.title, finishedAt: Date.now() });
+        } else state.percentages.unshift({ id: G.uid(), name: t.title, works: [{ name: t.title, finishedAt: Date.now() }], percentRate: rate, clientId: t.clientId || null, created: Date.now(), nextPaymentAt: nextMonthStart(Date.now()), payoutCount: 0 });
+      }
       else state.awaiting.unshift({ id: t.id, name: t.title, price: t.price || 0, paymentMethod: 'wise', finishedDate: G.today(), time: t.elapsed, created: t.created || Date.now(), workStart: t.firstStart || t.created, deadline: t.deadline || null, completedAt: Date.now(), clientId: t.clientId || null });
       state.tasks = state.tasks.filter(x => x.id !== id);
       persist(); render(false); toast(t.rateType === 'percent' ? 'Added to outstanding monthly percentages' : 'Moved to awaiting payment');
@@ -386,6 +399,15 @@
         form.querySelectorAll('[data-pay-type]').forEach(btn => { const selected = btn === payChoice; btn.classList.toggle('on', selected); btn.setAttribute('aria-pressed', String(selected)); });
         const price = form.elements.namedItem('p'); price.max = percent ? '100' : ''; price.placeholder = percent ? 'Rate (%)' : `Price ${SYM[state.currency]}`; price.setAttribute('aria-label', percent ? 'Monthly percentage rate' : 'Price');
       }
+    }
+    const editPayChoice = e.target.closest('[data-edit-pay]');
+    if (editPayChoice && editingKind === 'task' && dlg.open) {
+      editingTaskRateType = editPayChoice.dataset.editPay;
+      document.querySelectorAll('[data-edit-pay]').forEach(btn => { const selected = btn === editPayChoice; btn.classList.toggle('on', selected); btn.setAttribute('aria-pressed', String(selected)); });
+      const percent = editingTaskRateType === 'percent';
+      $('#priceText').textContent = percent ? 'Monthly percentage rate (%)' : `Price (${state.currency})`;
+      form.price.max = percent ? '100' : ''; form.price.value = ''; form.price.dataset.orig = ''; form.price.dataset.usd = '';
+      form.price.focus();
     }
     const t = e.target.closest('#tabs button'); if (t) { Sound.play('tab'); setView(t.dataset.view); }
     const c = e.target.closest('#currency button');

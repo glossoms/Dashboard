@@ -55,6 +55,7 @@
   <form method="dialog" id="form" autocomplete="off">
     <h2 id="dlgTitle">New commission</h2>
     <label>Name<input name="name" required maxlength="80" placeholder="Logo design"></label>
+    <div class="task-rate-picker" id="taskRatePicker" hidden><div class="muted">Payment type</div><div class="pay-picker" role="group" aria-label="Pending payment type"><button type="button" class="pay-option" data-edit-pay="fixed" aria-pressed="false">Fixed</button><button type="button" class="pay-option" data-edit-pay="percent" aria-pressed="false">Monthly %</button></div></div>
     <div class="row2">
       <label><span id="priceText">Price</span><input name="price" type="number" min="0" step="0.01" required placeholder="0.00" inputmode="decimal"></label>
       <label id="dateLabel">Date<input name="date" type="date" required></label>
