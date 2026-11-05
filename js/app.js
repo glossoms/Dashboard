@@ -414,11 +414,19 @@
     $('#soundBtn').classList.toggle('off', !state.sound); Sound.set(state.sound);
   }
   const welcomeDlg = $('#welcome'), welcomeForm = $('#welcomeForm');
+  let welcomeFirstRun = !state.name;
+  function openWelcome() {
+    welcomeForm.elements.name.value = state.name || '';
+    welcomeDlg.showModal();
+    welcomeForm.elements.name.focus();
+  }
+  $('#editNameBtn').addEventListener('click', openWelcome);
   welcomeForm.addEventListener('submit', e => {
     e.preventDefault();
     const name = welcomeForm.elements.name.value.trim();
     if (!name) { welcomeForm.elements.name.focus(); return; }
-    state.name = name; persist(); syncBrand(); welcomeDlg.close(); startSplash();
+    state.name = name; persist(); syncBrand(); welcomeDlg.close();
+    if (welcomeFirstRun) { welcomeFirstRun = false; startSplash(); }
   });
   let splashClose = null;
   async function startSplash() {
@@ -557,7 +565,7 @@
   syncSound();
   syncBrand();
   render();
-  if (state.name) startSplash(); else welcomeDlg.showModal();
+  if (state.name) startSplash(); else openWelcome();
   setInterval(async () => {
     if (view !== 'today' || document.hidden) return;
     const r = await Quotes.get(G.today());
