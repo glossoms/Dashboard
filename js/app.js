@@ -128,6 +128,7 @@
     if (animate) countUp();
     document.querySelectorAll('#currency button').forEach(b => b.classList.toggle('on', b.dataset.cur === state.currency));
     const ri = $('.rate-in'); if (ri) { ri.focus(); ri.select(); }
+    if (view === 'today') setupTodayLayout();
   }
   function movePill() {
     const b = $('#tabs button.on'), p = $('#pill');
@@ -185,6 +186,8 @@
   /* ---------- Actions ---------- */
   const pauseT = t => { if (t.startedAt) { t.elapsed = G.taskElapsed(t); t.startedAt = null; } };
   const actions = {
+    layoutmode: () => { layoutEditing = !layoutEditing; render(false); },
+    togglewidget: id => { const ids=['stats','quote','todos','schedule','deadlines','notes']; state.todayLayout=state.todayLayout||{order:ids.slice(),hidden:[]}; state.todayLayout.hidden=state.todayLayout.hidden||[]; state.todayLayout.hidden=state.todayLayout.hidden.includes(id)?state.todayLayout.hidden.filter(x=>x!==id):state.todayLayout.hidden.concat(id); persist(); render(false); },
     add: () => openDialog(),
     edit: id => openDialog(id),
     del: id => { const c = state.commissions.find(x => x.id === id); if (c && confirm(`Delete “${c.name}”?`)) { state.commissions = state.commissions.filter(x => x.id !== id); persist(); render(false); } },
@@ -287,34 +290,56 @@
     };
     const empty = msg => `<div class="empty slim"><p>${msg}</p></div>`;
 
-    return `
-    <section class="today-head rise"><div><div class="eyebrow">${longDate(now)}</div><h1>${greet(now)}</h1></div><div class="clock" id="clock">${timeStr(now)}</div></section>
-    ${running.length ? `<section class="live card rise"><span class="pulse"></span><div class="grow"><div class="muted">Working on${running.length > 1 ? ` · +${running.length - 1} more` : ''}</div><div class="name">${esc(running[0].title)}</div></div><span class="time" data-timer="${running[0].id}">${clock(G.taskElapsed(running[0], nowMs))}</span><button class="icon live" data-act="pause" data-id="${running[0].id}" aria-label="Pause">${icon('pause')}</button></section>` : ''}
-    <section class="stats">
+    const layout = state.todayLayout || { order: ['stats','quote','todos','schedule','deadlines','notes'], hidden: [] };
+    const ordered = a => a.slice().sort((x,y) => (layout.order.indexOf(x.id) < 0 ? 999 : layout.order.indexOf(x.id)) - (layout.order.indexOf(y.id) < 0 ? 999 : layout.order.indexOf(y.id)));
+    const widgets = [
+      {id:'stats',label:'Daily overview',html:`<section class="stats">
       <div class="card stat rise">${icon('check')}<svg class="ring" viewBox="0 0 52 52"><circle class="ring-bg" cx="26" cy="26" r="22"/><circle class="ring-fg" cx="26" cy="26" r="22" style="--c:${C};stroke-dasharray:${C};stroke-dashoffset:${C * (1 - p)}"/></svg><div class="lab">Today</div><div class="val">${done}/${todos.length}</div><div class="muted">tasks done</div></div>
       ${stat('wallet', 'This month', money(st.monthRevenue), `${st.monthCount} commission${st.monthCount === 1 ? '' : 's'}`, [st.monthRevenue, 'money'])}
       ${stat('list', 'In progress', money(pendVal), `${state.tasks.length} pending`, [pendVal, 'money'])}
       ${stat('flag', 'Next deadline', next ? `<span class="due ${nd.cls}" data-due="${next.deadline}">${nd.text}</span>` : '–', next ? esc(next.title) : 'Nothing this week')}
-    </section>
-    ${q ? `<figure class="quote card rise"><blockquote>“${esc(q.text)}”</blockquote><figcaption><span>— ${esc(q.author)}</span><button class="icon xs" data-act="newquote" aria-label="New quote">${icon('reset')}</button></figcaption></figure>` : ''}
-    <section class="grid2">
-      <div class="card rise"><div class="head free"><h3>Today <span class="muted">${done}/${todos.length}</span></h3></div>
+    </section>`},
+      {id:'quote',label:'Quote',html:q ? `<figure class="quote card rise" id="todayQuote"><blockquote>“${esc(q.text)}”</blockquote><figcaption><span>— ${esc(q.author)}</span><button class="icon xs" data-act="newquote" aria-label="New quote">${icon('reset')}</button></figcaption></figure>` : ''},
+      {id:'todos',label:'Today’s tasks',html:`<div class="card rise"><div class="head free"><h3>Today <span class="muted">${done}/${todos.length}</span></h3></div>
         <form class="qa" id="newTodo" autocomplete="off"><input name="t" placeholder="Add a task for today" maxlength="120" aria-label="New task"><button class="icon" type="submit" aria-label="Add">${icon('plus')}</button></form>
-        ${todos.length ? `<ul class="list flat">${todos.map(todoItem).join('')}</ul>` : empty('A clear day')}</div>
-      <div class="card rise"><div class="head free"><h3>Schedule</h3><button class="icon" data-act="importics" aria-label="Import calendar file" title="Import a .ics calendar file">${icon('upload')}</button></div>
+        ${todos.length ? `<ul class="list flat">${todos.map(todoItem).join('')}</ul>` : empty('A clear day')}</div>`},
+      {id:'schedule',label:'Schedule',html:`<div class="card rise"><div class="head free"><h3>Schedule</h3><button class="icon" data-act="importics" aria-label="Import calendar file" title="Import a .ics calendar file">${icon('upload')}</button></div>
         <form class="qa" id="newEvent" autocomplete="off"><input name="t" placeholder="Reminder or event" maxlength="100" aria-label="Event title"><input name="tm" type="time" class="mini" aria-label="Time"><input name="d" type="date" class="mini" value="${ymd}" aria-label="Date"><button class="icon" type="submit" aria-label="Add">${icon('plus')}</button></form>
         ${evToday.length ? `<ul class="list flat">${evToday.map(e => evItem(e, e.time || 'All day')).join('')}</ul>` : empty('Nothing scheduled today')}
-        ${evNext.length ? `<div class="subh">Coming up</div><ul class="list flat">${evNext.map(e => evItem(e, `${wk(e.date)}${e.time ? ' · ' + e.time : ''}`)).join('')}</ul>` : ''}</div>
-    </section>
-    <section class="grid2">
-      <div class="card rise"><div class="head free"><h3>Deadlines</h3><button class="icon" data-act="goto" data-id="tasks" aria-label="Open pending">${icon('list')}</button></div>
-        ${due.length ? `<ul class="list flat">${due.map(dueItem).join('')}</ul>` : empty('Nothing due this week')}</div>
-      <div class="card rise notes"><div class="head free"><h3>Notes</h3></div>
+        ${evNext.length ? `<div class="subh">Coming up</div><ul class="list flat">${evNext.map(e => evItem(e, `${wk(e.date)}${e.time ? ' · ' + e.time : ''}`)).join('')}</ul>` : ''}</div>`},
+      {id:'deadlines',label:'Deadlines',html:`<div class="card rise"><div class="head free"><h3>Deadlines</h3><button class="icon" data-act="goto" data-id="tasks" aria-label="Open pending">${icon('list')}</button></div>
+        ${due.length ? `<ul class="list flat">${due.map(dueItem).join('')}</ul>` : empty('Nothing due this week')}</div>`},
+      {id:'notes',label:'Notes',html:`<div class="card rise notes"><div class="head free"><h3>Notes</h3></div>
         <div class="ncols">
           <div class="ncol"><div class="nl">Yesterday · ${wk(yKey)} <span class="need" id="needBadge" ${yNote.trim() ? 'hidden' : ''}>Needs filling</span></div><textarea data-note="${yKey}" class="${yNote.trim() ? '' : 'attn'}" placeholder="What got done? What’s left?">${esc(yNote)}</textarea></div>
           <div class="ncol"><div class="nl">Today</div><textarea data-note="${ymd}" placeholder="Wins, blockers, ideas…">${esc(state.notes[ymd] || '')}</textarea></div>
-        </div></div>
-    </section>`;
+        </div></div>`}
+    ].filter(w => w.html && !layout.hidden.includes(w.id));
+    return `<section class="today-head rise"><div><div class="eyebrow">${longDate(now)}</div><h1>${greet(now)}</h1><div class="layout-hint">Hold any card for 3 seconds to arrange your Today page</div></div><div class="today-heading-tools"><div class="clock" id="clock">${timeStr(now)}</div><button class="icon layout-toggle" data-act="layoutmode" aria-label="Customize Today page" title="Customize Today page">${icon('grid')}</button></div></section>
+      ${running.length ? `<section class="live card rise"><span class="pulse"></span><div class="grow"><div class="muted">Working on${running.length > 1 ? ` · +${running.length - 1} more` : ''}</div><div class="name">${esc(running[0].title)}</div></div><span class="time" data-timer="${running[0].id}">${clock(G.taskElapsed(running[0], nowMs))}</span><button class="icon live" data-act="pause" data-id="${running[0].id}" aria-label="Pause">${icon('pause')}</button></section>` : ''}
+      <div class="today-layout">${ordered(widgets).map(w => `<div class="today-widget" data-widget="${w.id}" draggable="false"><button class="widget-remove" data-act="togglewidget" data-id="${w.id}" aria-label="Hide ${w.label}">−</button>${w.html}</div>`).join('')}</div>
+      <div class="widget-picker" aria-label="Hidden Today sections"></div>`;
+  }
+
+  let layoutEditing = false, holdTimer = null;
+  function setupTodayLayout() {
+    const host = $('.today-layout'); if (!host) return;
+    host.classList.toggle('editing', layoutEditing);
+    host.querySelectorAll('.today-widget').forEach(w => { w.draggable = layoutEditing; });
+    const picker = $('.widget-picker');
+    if (picker) {
+      const all = [['stats','Daily overview'],['quote','Quote'],['todos','Today’s tasks'],['schedule','Schedule'],['deadlines','Deadlines'],['notes','Notes']];
+      const hidden = (state.todayLayout && state.todayLayout.hidden) || [];
+      picker.innerHTML = layoutEditing ? `<div class="picker-label">Add a section</div>${all.filter(x => hidden.includes(x[0])).map(x => `<button class="widget-ghost" data-act="togglewidget" data-id="${x[0]}">＋ ${x[1]}</button>`).join('') || '<span class="muted">All sections are visible</span>'}<button class="btn ghost done-edit" data-act="layoutmode">Done</button>` : '';
+    }
+    if (!host.dataset.bound) {
+      host.dataset.bound = '1';
+      host.addEventListener('pointerdown', e => { if (e.target.closest('button,input,textarea,select')) return; holdTimer = setTimeout(() => { layoutEditing = true; render(false); }, 3000); });
+      ['pointerup','pointercancel','pointerleave'].forEach(n => host.addEventListener(n, () => clearTimeout(holdTimer)));
+      host.addEventListener('dragstart', e => { const w=e.target.closest('.today-widget'); if(w&&layoutEditing){e.dataTransfer.setData('text/plain',w.dataset.widget);e.dataTransfer.effectAllowed='move';} });
+      host.addEventListener('dragover', e => { if(layoutEditing) e.preventDefault(); });
+      host.addEventListener('drop', e => { if(!layoutEditing)return;e.preventDefault();const from=e.dataTransfer.getData('text/plain'),to=e.target.closest('.today-widget');if(!to||from===to.dataset.widget)return;const ids=[...host.querySelectorAll('.today-widget')].map(x=>x.dataset.widget),a=ids.indexOf(from),b=ids.indexOf(to.dataset.widget);ids.splice(b,0,ids.splice(a,1)[0]);state.todayLayout=state.todayLayout||{hidden:[]};state.todayLayout.order=ids;persist();render(false); });
+    }
   }
   function addTodo(f) {
     const t = f.t.value.trim(); if (!t) return;
@@ -526,5 +551,13 @@
   syncSound();
   render();
   startSplash();
+  setInterval(async () => {
+    if (view !== 'today' || document.hidden) return;
+    const r = await Quotes.get(G.today());
+    if (state.quote && state.quote.date !== G.today()) return;
+    state.quote = { date: G.today(), text: r.text, author: r.author }; persist();
+    const card = $('#todayQuote');
+    if (card) { card.querySelector('blockquote').textContent = `“${r.text}”`; card.querySelector('figcaption span').textContent = '— ' + r.author; }
+  }, 20000);
   document.fonts && document.fonts.ready.then(movePill);
 })();

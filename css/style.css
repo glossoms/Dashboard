@@ -257,3 +257,22 @@ body.splashing{overflow:hidden}
 .qa{flex-wrap:nowrap}.qa input.mini{width:auto;flex:none}.qa input[name=t]{flex:1 1 90px}
 .qa input[type=time]{width:84px}.qa input[type=date]{width:128px}
 @media(max-width:560px){.qa{flex-wrap:wrap}.qa input[name=t]{flex:1 1 100%}}
+
+/* Today page personalization */
+.today-heading-tools{display:flex;align-items:center;gap:10px}.layout-toggle{color:var(--accent)}
+.layout-hint{font-size:11px;color:var(--mute);margin-top:6px;opacity:.75}
+.today-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:14px;align-items:start}
+.today-widget[data-widget="stats"],.today-widget[data-widget="quote"]{grid-column:1/-1}
+.today-widget .stats{margin:0}.today-widget .quote{height:100%}.today-widget{position:relative;min-width:0}.today-widget .card{height:100%}
+.widget-remove{display:none}
+.today-layout.editing{padding:12px;border:1.5px dashed color-mix(in srgb,var(--accent) 50%,var(--line));border-radius:24px;background:color-mix(in srgb,var(--accent) 3%,transparent)}
+.today-layout.editing .today-widget{animation:widgetWiggle .22s ease-in-out infinite alternate;cursor:grab}
+.today-layout.editing .today-widget:nth-child(even){animation-delay:-.16s}.today-layout.editing .today-widget:active{cursor:grabbing}
+.today-layout.editing .today-widget>.card,.today-layout.editing .today-widget>.stats{outline:1.5px dashed color-mix(in srgb,var(--mute) 42%,transparent);outline-offset:5px;border-radius:20px}
+.today-layout.editing .widget-remove{display:grid;place-items:center;position:absolute;z-index:3;top:-10px;left:-8px;width:25px;height:25px;border:2px solid var(--card);border-radius:50%;background:var(--red);color:white;font-size:19px;line-height:1;box-shadow:0 3px 12px rgba(0,0,0,.2);cursor:pointer}
+@keyframes widgetWiggle{from{transform:rotate(-.35deg)}to{transform:rotate(.35deg)}}
+.widget-picker{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}.picker-label{width:100%;font-size:12px;color:var(--mute);font-weight:600}
+.widget-ghost{padding:10px 14px;border:1.5px dashed color-mix(in srgb,var(--mute) 45%,transparent);border-radius:14px;background:transparent;color:var(--mute);font:inherit;cursor:pointer}
+.widget-ghost:hover{border-color:var(--accent);color:var(--accent)}.done-edit{margin-left:auto}
+@media(max-width:860px){.today-layout{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.today-layout.editing .today-widget{animation:none}}
