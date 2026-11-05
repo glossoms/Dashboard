@@ -1,8 +1,9 @@
 (function () {
   const G = window.Gloom, $ = (s, r = document) => r.querySelector(s);
   let state = G.load();
+  state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0 }, t)); // migrate old to-do items
   let view = location.hash.slice(1) || 'overview';
-  let editingId = null, editingTask = null;
+  let editingId = null;
   const persist = () => G.save(state);
 
   const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'JPY', 'CHF'];
@@ -13,6 +14,7 @@
   const fmtDate = s => parseDate(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const monthName = (k, long) => parseDate(k + '-01').toLocaleDateString(undefined, { month: long ? 'long' : 'short', ...(long ? { year: 'numeric' } : {}) });
   const clock = ms => { const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; };
+  const totalTime = (now = Date.now()) => state.tasks.reduce((s, t) => s + G.taskElapsed(t, now), 0) + state.commissions.reduce((s, c) => s + (c.time || 0), 0);
   const hours = ms => { const m = Math.floor(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 
   /* ---------- Views ---------- */
@@ -20,7 +22,7 @@
     const nowKey = G.monthKey(G.today()), st = G.stats(state.commissions, nowKey);
     const sorted = G.sortByDate(state.commissions);
     const series = G.monthlySeries(state.commissions, 6, nowKey);
-    const timeMs = state.tasks.reduce((s, t) => s + G.taskElapsed(t), 0);
+    const timeMs = totalTime();
     const delta = st.delta === null ? '' : `<span class="chip ${st.delta >= 0 ? 'up' : 'down'}">${icon(st.delta >= 0 ? 'up' : 'down')}${Math.abs(st.delta)}%</span>`;
     const barItems = sorted.slice(-12).map(c => ({ label: esc(c.name.length > 9 ? c.name.slice(0, 8) + '…' : c.name), value: c.price, tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}` }));
     const lineItems = series.map(m => ({ label: monthName(m.key), value: m.count, tip: `${monthName(m.key, true)} · ${m.count} commission${m.count === 1 ? '' : 's'}` }));
@@ -35,7 +37,7 @@
     <section class="stats">
       ${stat('wallet', 'This month', st.monthCount, 'commissions')}
       ${stat('grid', 'Average', money(st.monthAvg), 'per commission')}
-      ${stat('clock', 'Time tracked', `<span id="totalTime">${hours(timeMs)}</span>`, 'all tasks')}
+      ${stat('clock', 'Time tracked', `<span id="totalTime">${hours(timeMs)}</span>`, 'all work')}
       ${stat('up', 'All time', money(st.total), `${st.count} total`)}
     </section>
     <section class="charts">
@@ -52,7 +54,7 @@
   function commissions() {
     const list = G.sortByDate(state.commissions).reverse();
     const items = list.map((c, i) => `<li class="item rise" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      <div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${fmtDate(c.date)}</div></div>
+      <div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div></div>
       <div class="price">${money(c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
@@ -62,25 +64,23 @@
 
   function taskItem(t) {
     const running = !!t.startedAt;
-    const title = editingTask === t.id
-      ? `<input class="inline" data-edit="${t.id}" value="${esc(t.title)}" maxlength="120">`
-      : `<div class="name ${t.done ? 'strike' : ''}">${esc(t.title)}</div>`;
-    return `<li class="item task ${running ? 'running' : ''}" data-id="${t.id}">
-      <button class="check ${t.done ? 'on' : ''}" data-act="toggle" data-id="${t.id}" aria-label="Complete">${icon('check')}</button>
-      <div class="grow">${title}</div>
+    return `<li class="item task ${running ? 'running' : ''}">
+      <div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${money(t.price || 0)}</div></div>
       <span class="time" data-timer="${t.id}">${clock(G.taskElapsed(t))}</span>
-      ${t.done ? '' : `<button class="icon ${running ? 'live' : ''}" data-act="${running ? 'pause' : 'start'}" data-id="${t.id}" aria-label="${running ? 'Pause' : 'Start'}">${icon(running ? 'pause' : 'play')}</button>`}
+      <button class="icon ${running ? 'live' : ''}" data-act="${running ? 'pause' : 'start'}" data-id="${t.id}" aria-label="${running ? 'Pause' : 'Start'}">${icon(running ? 'pause' : 'play')}</button>
       <button class="icon" data-act="reset" data-id="${t.id}" aria-label="Reset timer">${icon('reset')}</button>
-      <button class="icon" data-act="rename" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button>
-      <button class="icon danger" data-act="deltask" data-id="${t.id}" aria-label="Delete">${icon('trash')}</button></li>`;
+      <button class="icon" data-act="edittask" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button>
+      <button class="icon danger" data-act="deltask" data-id="${t.id}" aria-label="Delete">${icon('trash')}</button>
+      <button class="btn complete" data-act="complete" data-id="${t.id}">${icon('check')}<span>Complete</span></button></li>`;
   }
 
   function tasks() {
-    const pending = state.tasks.filter(t => !t.done), done = state.tasks.filter(t => t.done);
-    const sec = (label, arr, msg) => `<h3 class="sec">${label}<span>${arr.length}</span></h3>${arr.length ? `<ul class="list card">${arr.map(taskItem).join('')}</ul>` : `<div class="empty card slim"><p>${msg}</p></div>`}`;
-    return `<div class="bar-head"><h1>Tasks</h1></div>
-      <form class="newtask card" id="newTask" autocomplete="off"><input name="t" placeholder="New task" maxlength="120" aria-label="New task"><button class="btn primary" type="submit" aria-label="Add task">${icon('plus')}</button></form>
-      ${sec('Pending', pending, 'All clear')}${sec('Completed', done, 'Nothing completed yet')}`;
+    return `<div class="bar-head"><h1>Pending</h1></div>
+      <form class="newtask card" id="newTask" autocomplete="off">
+        <input name="t" placeholder="New pending commission" maxlength="80" required aria-label="Commission name">
+        <input name="p" class="pr" type="number" min="0" step="0.01" placeholder="Price" required inputmode="decimal" aria-label="Price">
+        <button class="btn primary" type="submit" aria-label="Add">${icon('plus')}</button></form>
+      ${state.tasks.length ? `<ul class="list card">${state.tasks.map(taskItem).join('')}</ul>` : `<div class="empty card">${icon('list')}<p>Nothing pending</p></div>`}`;
   }
 
   /* ---------- Rendering ---------- */
@@ -91,7 +91,6 @@
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
     movePill();
     countUp();
-    const inp = $('[data-edit]'); if (inp) { inp.focus(); inp.select(); }
   }
   function movePill() {
     const b = $('#tabs button.on'), p = $('#pill');
@@ -109,38 +108,52 @@
   }
   const setView = v => { view = v; location.hash = v; render(); };
 
-  /* ---------- Commission dialog ---------- */
+  /* ---------- Dialog (commission or pending commission) ---------- */
   const dlg = $('#dlg'), form = $('#form');
-  function openDialog(id) {
-    editingId = id || null;
-    const c = state.commissions.find(x => x.id === id);
-    $('#dlgTitle').textContent = c ? 'Edit commission' : 'New commission';
-    form.name.value = c ? c.name : ''; form.price.value = c ? c.price : ''; form.date.value = c ? c.date : G.today();
+  let editingKind = 'commission';
+  const task = id => state.tasks.find(t => t.id === id);
+  function openDialog(id, kind = 'commission') {
+    editingKind = kind; editingId = id || null;
+    const c = kind === 'task' ? task(id) : state.commissions.find(x => x.id === id);
+    $('#dlgTitle').textContent = kind === 'task' ? 'Edit pending commission' : (c ? 'Edit commission' : 'New commission');
+    $('#dateLabel').hidden = kind === 'task'; form.date.required = kind !== 'task';
+    form.name.value = c ? (c.name || c.title) : ''; form.price.value = c ? c.price : ''; form.date.value = (c && c.date) || G.today();
     dlg.showModal(); form.name.focus();
   }
   form.addEventListener('submit', e => {
-    const name = form.name.value.trim(), price = parseFloat(form.price.value), date = form.date.value;
-    if (!name || !isFinite(price) || price < 0 || !date) { e.preventDefault(); return; }
-    if (editingId) Object.assign(state.commissions.find(c => c.id === editingId), { name, price, date });
-    else state.commissions.push({ id: G.uid(), name, price, date, created: Date.now() });
+    const name = form.name.value.trim(), price = parseFloat(form.price.value), date = form.date.value, isTask = editingKind === 'task';
+    if (!name || !isFinite(price) || price < 0 || (!isTask && !date)) { e.preventDefault(); return; }
+    if (isTask) Object.assign(task(editingId), { title: name, price });
+    else if (editingId) Object.assign(state.commissions.find(c => c.id === editingId), { name, price, date });
+    else state.commissions.push({ id: G.uid(), name, price, date, time: 0, created: Date.now() });
     persist(); render(false);
   });
   $('#cancel').onclick = () => dlg.close();
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
+  function toast(msg) {
+    const el = document.createElement('div'); el.className = 'toast'; el.innerHTML = icon('check') + esc(msg);
+    document.body.appendChild(el); setTimeout(() => el.remove(), 2400);
+  }
+
   /* ---------- Actions ---------- */
-  const task = id => state.tasks.find(t => t.id === id);
   const pauseT = t => { if (t.startedAt) { t.elapsed = G.taskElapsed(t); t.startedAt = null; } };
   const actions = {
     add: () => openDialog(),
     edit: id => openDialog(id),
     del: id => { const c = state.commissions.find(x => x.id === id); if (c && confirm(`Delete “${c.name}”?`)) { state.commissions = state.commissions.filter(x => x.id !== id); persist(); render(false); } },
-    toggle: id => { const t = task(id); pauseT(t); t.done = !t.done; persist(); render(false); },
     start: id => { const t = task(id); if (!t.startedAt) t.startedAt = Date.now(); persist(); render(false); },
     pause: id => { pauseT(task(id)); persist(); render(false); },
     reset: id => { const t = task(id), was = !!t.startedAt; t.elapsed = 0; t.startedAt = was ? Date.now() : null; persist(); render(false); },
-    rename: id => { editingTask = id; render(false); },
-    deltask: id => { const t = task(id); if (t && confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter(x => x.id !== id); persist(); render(false); } }
+    edittask: id => openDialog(id, 'task'),
+    deltask: id => { const t = task(id); if (t && confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter(x => x.id !== id); persist(); render(false); } },
+    complete: id => {
+      const t = task(id); if (!t) return;
+      pauseT(t);
+      state.commissions.push({ id: G.uid(), name: t.title, price: t.price || 0, date: G.today(), time: t.elapsed, created: Date.now() });
+      state.tasks = state.tasks.filter(x => x.id !== id);
+      persist(); render(false); toast('Added to your commissions');
+    }
   };
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (b) actions[b.dataset.act](b.dataset.id);
@@ -149,22 +162,11 @@
   document.addEventListener('submit', e => {
     if (e.target.id !== 'newTask') return;
     e.preventDefault();
-    const v = e.target.t.value.trim(); if (!v) return;
-    state.tasks.unshift({ id: G.uid(), title: v, done: false, elapsed: 0, startedAt: null, created: Date.now() });
+    const title = e.target.t.value.trim(), price = parseFloat(e.target.p.value);
+    if (!title || !isFinite(price) || price < 0) return;
+    state.tasks.unshift({ id: G.uid(), title, price, elapsed: 0, startedAt: null, created: Date.now() });
     persist(); render(false); $('#newTask input').focus();
   });
-  function commitEdit(inp, save) {
-    const t = task(inp.dataset.edit), v = inp.value.trim();
-    if (save && v && t) { t.title = v; persist(); }
-    editingTask = null; render(false);
-  }
-  document.addEventListener('keydown', e => {
-    if (e.target.dataset && e.target.dataset.edit) {
-      if (e.key === 'Enter') commitEdit(e.target, true);
-      if (e.key === 'Escape') commitEdit(e.target, false);
-    }
-  });
-  document.addEventListener('focusout', e => { if (e.target.dataset && e.target.dataset.edit && editingTask) commitEdit(e.target, true); });
 
   /* ---------- Tooltip ---------- */
   const tip = $('#tip');
@@ -184,7 +186,7 @@
   setInterval(() => {
     const now = Date.now();
     state.tasks.forEach(t => { const el = $(`[data-timer="${t.id}"]`); if (el) el.textContent = clock(G.taskElapsed(t, now)); });
-    const tt = $('#totalTime'); if (tt) tt.textContent = hours(state.tasks.reduce((s, t) => s + G.taskElapsed(t, now), 0));
+    const tt = $('#totalTime'); if (tt) tt.textContent = hours(totalTime(now));
   }, 250);
 
   window.addEventListener('resize', movePill);
