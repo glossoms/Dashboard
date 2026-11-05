@@ -304,3 +304,12 @@ body.splashing{overflow:hidden}
 .range-panel.open{max-height:52px;opacity:1;transform:none;margin-top:8px;pointer-events:auto}
 .range-panel .muted{font-size:12px}
 @media(max-width:560px){.range-panel{align-items:flex-start;flex-direction:column;gap:6px}.range-panel.open{max-height:90px}}
+
+.awaiting-payment{display:flex;align-items:center;gap:10px;flex:none}.awaiting-gross{display:flex;align-items:center;gap:5px}.awaiting-edit-btn{opacity:0;transform:translateX(3px);transition:opacity .18s,transform .18s;color:var(--mute)}
+.awaiting-item:hover .awaiting-edit-btn,.awaiting-item:focus-within .awaiting-edit-btn{opacity:1;transform:none}
+.awaiting-estimate{font-size:12px;color:var(--accent);margin-top:3px;font-variant-numeric:tabular-nums}
+.payment-method{font:inherit;font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:7px 9px;cursor:pointer}
+.payment-method option:disabled{color:var(--mute)}
+.awaiting-price-edit{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.awaiting-price-edit label{display:block;margin:0;font-size:11px}.awaiting-price-edit input{width:95px;padding:7px 8px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:inherit;font-size:13px}
+.awaiting-price-edit .btn{padding:7px 10px;font-size:12px}
+@media(max-width:760px){.awaiting-payment{flex:1 1 100%;flex-wrap:wrap}.awaiting-payment .paid-btn{flex:1 1 100%;justify-content:center}.awaiting-edit-btn{opacity:.7;transform:none}}

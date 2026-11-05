@@ -4,7 +4,7 @@
   state.tasks = state.tasks.filter(t => !t.done).map(t => Object.assign({ price: 0, deadline: null }, t, { firstStart: t.firstStart || t.startedAt || (t.elapsed ? t.created : null) })); // migrate older items
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
-  let editingId = null, editingRate = false, overviewRangeOpen = false;
+  let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null;
   const persist = () => G.save(state);
   const syncBrand = () => { const brand = $('#brand'); if (brand) brand.textContent = state.name || 'Gloom'; };
 
@@ -44,6 +44,7 @@
   const clock = ms => { const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; };
   const totalTime = (now = Date.now()) => state.tasks.reduce((s, t) => s + G.taskElapsed(t, now), 0) + state.commissions.reduce((s, c) => s + (c.time || 0), 0);
   const hours = ms => { const m = Math.floor(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+  const wiseFee = amount => amount > 0 ? Math.round((amount * 0.018 * 1.18 + 2) * 100) / 100 : 0;
 
   /* ---------- Views ---------- */
   const OVERVIEW_PERIODS = { '30d': { days: 30, label: '30 days' }, '90d': { days: 90, label: '90 days' }, '6m': { days: 183, label: '6 months' }, '12m': { days: 365, label: '12 months' } };
@@ -101,13 +102,18 @@
     const list = G.sortByDate(state.commissions).reverse();
     const awaiting = state.awaiting || [];
     const items = list.map((c, i) => `<li class="item rise" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div></div>
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.paymentFee ? ` · ${esc(c.paymentMethod || 'Payment')} fee ${money(c.paymentFee)} on ${money(c.grossPrice || c.price)}` : ''}</div></div>
       <div class="price">${money(c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`).join('');
-    const waitingItems = awaiting.map(c => `<li class="item awaiting-item">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}Work finished ${fmtDate(c.finishedDate || G.today())}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div></div>
-      <div class="price">${money(c.price)}</div><button class="btn primary paid-btn" data-act="paid" data-id="${c.id}">${icon('check')}<span>Payment completed</span></button></li>`).join('');
+    const waitingItems = awaiting.map(c => {
+      const fee = c.paymentMethod === 'wise' ? wiseFee(c.price || 0) : 0, net = Math.max(0, (c.price || 0) - fee), editing = editingAwaitingId === c.id;
+      return `<li class="item awaiting-item">
+        ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}Work finished ${fmtDate(c.finishedDate || G.today())}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}</div>
+        <div class="awaiting-estimate" title="Approximation: 1.8% conversion fee, 18% GST on that fee, plus a fixed $2 transfer charge">Wise estimate: ${money(fee)} fee · ${money(net)} net <span class="muted">(approx.)</span></div></div>
+        ${editing ? `<div class="awaiting-price-edit"><label for="awaitingPrice">Gross amount (${SYM[state.currency]})</label><input id="awaitingPrice" type="number" min="0" step="0.01" value="${(Math.round((c.price || 0) * rate() * 100) / 100).toFixed(2)}"><button class="btn primary" data-act="saveawaiting" data-id="${c.id}">Save</button><button class="btn ghost" data-act="cancelawaiting">Cancel</button></div>` : `<div class="awaiting-payment"><div class="awaiting-gross"><button class="icon awaiting-edit-btn" data-act="editawaiting" data-id="${c.id}" aria-label="Edit expected amount" title="Edit expected amount">${icon('edit')}</button><span class="price">${money(c.price || 0)}</span></div><select class="payment-method" data-awaiting-method="${c.id}" aria-label="Payment method"><option value="wise"${(c.paymentMethod || 'wise') === 'wise' ? ' selected' : ''}>Wise</option><option value="paypal" disabled>PayPal · coming soon</option></select><button class="btn primary paid-btn" data-act="paid" data-id="${c.id}">${icon('check')}<span>Payment completed</span></button></div>`}
+      </li>`;
+    }).join('');
     return `<div class="bar-head"><div><h1>Commissions</h1>${rateNote()}</div><button class="btn primary" data-act="add">${icon('plus')}<span>Add</span></button></div>
       ${awaiting.length ? `<section class="awaiting-section"><div class="section-title"><h2>Awaiting payment</h2><span class="muted">${awaiting.length} finished</span></div><ul class="list card">${waitingItems}</ul></section>` : ''}
       ${list.length ? `<section class="commission-history"><div class="section-title"><h2>Paid commissions</h2></div><ul class="list card">${items}</ul></section>` : `<div class="empty card">${icon('wallet')}<p>${awaiting.length ? 'No paid commissions yet' : 'No commissions yet'}</p></div>`}`;
@@ -212,6 +218,9 @@
       trigger.setAttribute('aria-expanded', String(overviewRangeOpen)); select.tabIndex = overviewRangeOpen ? 0 : -1;
     },
     togglewidget: id => { const ids=['stats','quote','todos','schedule','deadlines','notes']; state.todayLayout=state.todayLayout||{order:ids.slice(),hidden:[]}; state.todayLayout.hidden=state.todayLayout.hidden||[]; state.todayLayout.hidden=state.todayLayout.hidden.includes(id)?state.todayLayout.hidden.filter(x=>x!==id):state.todayLayout.hidden.concat(id); persist(); render(false); },
+    editawaiting: id => { editingAwaitingId = id; render(false); $('#awaitingPrice').focus(); $('#awaitingPrice').select(); },
+    saveawaiting: id => { const c = state.awaiting.find(x => x.id === id), entered = parseFloat($('#awaitingPrice').value); if (!c || !isFinite(entered) || entered < 0) return; c.price = Math.round((entered / rate()) * 1e4) / 1e4; editingAwaitingId = null; persist(); render(false); },
+    cancelawaiting: () => { editingAwaitingId = null; render(false); },
     add: () => openDialog(),
     edit: id => openDialog(id),
     del: id => { const c = state.commissions.find(x => x.id === id); if (c && confirm(`Delete “${c.name}”?`)) { state.commissions = state.commissions.filter(x => x.id !== id); persist(); render(false); } },
@@ -248,7 +257,8 @@
     },
     paid: id => {
       const c = (state.awaiting || []).find(x => x.id === id); if (!c) return;
-      state.commissions.push({ id: G.uid(), name: c.name, price: c.price || 0, date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
+      const grossPrice = c.price || 0, fee = c.paymentMethod === 'wise' ? wiseFee(grossPrice) : 0, netPrice = Math.max(0, Math.round((grossPrice - fee) * 10000) / 10000);
+      state.commissions.push({ id: G.uid(), name: c.name, price: netPrice, grossPrice, paymentFee: fee, paymentMethod: c.paymentMethod || 'wise', date: G.today(), time: c.time || 0, created: Date.now(), workStart: c.workStart || c.created, deadline: c.deadline || null, completedAt: c.completedAt || Date.now(), clientId: c.clientId || null });
       state.awaiting = state.awaiting.filter(x => x.id !== id);
       persist(); render(false); toast('Payment recorded');
     }
@@ -260,9 +270,16 @@
     if (c && c.dataset.cur !== state.currency) { Sound.play('tab'); state.currency = c.dataset.cur; persist(); render(false); if (c.dataset.cur === 'INR') refreshRate(); }
   });
   document.addEventListener('change', e => {
-    if (e.target.id !== 'overviewRange') return;
-    if (!OVERVIEW_PERIODS[e.target.value]) return;
-    state.overviewRange = e.target.value; persist(); render(false);
+    if (e.target.id === 'overviewRange') {
+      if (!OVERVIEW_PERIODS[e.target.value]) return;
+      state.overviewRange = e.target.value; persist(); render(false); return;
+    }
+    if (e.target.matches('[data-awaiting-method]')) {
+      const c = state.awaiting.find(x => x.id === e.target.dataset.awaitingMethod);
+      if (!c) return;
+      c.paymentMethod = e.target.value;
+      persist(); render(false);
+    }
   });
   function commitRate(inp, save) {
     const v = parseFloat(inp.value); editingRate = false;
