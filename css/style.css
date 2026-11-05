@@ -196,10 +196,10 @@ main>section:nth-child(4) .rise{animation-delay:.34s}main>section:nth-child(4) .
 .flagic.today{background:color-mix(in srgb,var(--warm) 18%,transparent);color:var(--warm)}
 .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;background:color-mix(in srgb,var(--mute) 14%,transparent);color:var(--mute)}
 .tag.overdue{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}.tag.today{background:color-mix(in srgb,var(--warm) 18%,transparent);color:#c77700}
-.live{display:flex;align-items:center;gap:12px;padding:14px 18px}
+.live.card{display:flex;align-items:center;gap:12px;padding:14px 18px}
 .pulse{width:10px;height:10px;border-radius:50%;background:var(--accent);animation:pulse 1.6s ease-in-out infinite;flex:none}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%,100%{box-shadow:0 0 0 12px transparent}}
-.live .time{color:var(--accent);font-size:18px;font-weight:600}
+.live.card .time{color:var(--accent);font-size:18px;font-weight:600}
 .quote{padding:20px 26px;display:grid;gap:8px}
 .quote blockquote{font:italic 400 clamp(17px,2.4vw,21px)/1.45 "New York",Georgia,"Times New Roman",serif;letter-spacing:-.005em}
 .quote figcaption{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:13px}
@@ -260,7 +260,6 @@ body.splashing{overflow:hidden}
 
 /* Today page personalization */
 .today-heading-tools{display:flex;align-items:center;gap:10px}.layout-toggle{color:var(--accent)}
-.layout-hint{font-size:11px;color:var(--mute);margin-top:6px;opacity:.75}
 .today-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:14px;align-items:start}
 .today-widget[data-widget="stats"],.today-widget[data-widget="quote"]{grid-column:1/-1}
 .today-widget .stats{margin:0}.today-widget .quote{height:100%}.today-widget{position:relative;min-width:0}.today-widget .card{height:100%}
