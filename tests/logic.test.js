@@ -38,4 +38,21 @@ assert.strictEqual(G.taskElapsed({ elapsed: 5000, startedAt: 1000 }, 4000), 8000
 
 // sorting
 assert.deepStrictEqual(G.sortByDate([c(1, '2026-03-01'), c(2, '2026-01-01')]).map(x => x.price), [2, 1]);
+// turnaround: deadline vs actual (wall-clock from first Start to Complete)
+const H = 36e5, T0 = 1_000_000_000_000;
+const done = [
+  { id: 'a', name: 'A', workStart: T0, deadline: T0 + 10 * H, completedAt: T0 + 6 * H, time: 2 * H },   // on time
+  { id: 'b', name: 'B', workStart: T0, deadline: T0 + 4 * H, completedAt: T0 + 9 * H, time: 3 * H },    // late
+  { id: 'c', name: 'C', workStart: T0, completedAt: T0 + 3 * H },                                      // no deadline
+  { id: 'd', name: 'D', price: 5 }                                                                      // manual, ignored
+];
+const ta = G.turnaround(done);
+assert.strictEqual(ta.items.length, 3);
+assert.strictEqual(ta.withDeadline.length, 2);
+assert.strictEqual(ta.items.find(i => i.id === 'a').late, false);
+assert.strictEqual(ta.items.find(i => i.id === 'b').late, true);
+assert.strictEqual(ta.items.find(i => i.id === 'b').allotted, 4 * H);
+assert.strictEqual(ta.avg, 6 * H); // (6+9+3)/3 hours
+assert.strictEqual(ta.items.find(i => i.id === 'c').allotted, null);
+assert.deepStrictEqual(G.turnaround([]).items, []);
 console.log('logic tests passed');

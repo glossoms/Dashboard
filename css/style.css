@@ -12,7 +12,7 @@ use[href="#i-play"]{fill:currentColor}
 .tabs button{position:relative;z-index:1;display:flex;align-items:center;gap:7px;border:0;background:none;color:var(--mute);font:inherit;font-weight:500;padding:7px 16px;border-radius:999px;cursor:pointer;transition:color .3s}
 .tabs button.on{color:var(--ink)}
 .pill{position:absolute;top:3px;bottom:3px;left:0;background:var(--card);border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.12);transition:transform .45s var(--ease),width .45s var(--ease)}
-.cur{appearance:none;border:0;background:none;color:var(--mute);font:inherit;font-weight:500;cursor:pointer;text-align:right;min-width:70px;padding:6px}
+
 h1{font-size:34px;letter-spacing:-.03em;font-weight:700}
 h3{font-size:15px;font-weight:600;margin-bottom:14px;letter-spacing:-.01em}
 .card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:24px}
@@ -117,3 +117,21 @@ main{grid-template-columns:minmax(0,1fr)}
 @media(max-width:760px){.newtask input.pr{width:84px}.task .btn.complete{margin-left:auto}}
 @media(max-width:760px){.task{padding:14px 10px}.task .grow{flex:1 1 100%;margin-bottom:2px}.task .time{order:0;margin-right:auto}.task .btn.complete{margin-left:4px}}
 @media(max-width:760px){.task .btn.complete{flex:1 1 100%;justify-content:center;margin:6px 0 0}}
+
+.seg{display:flex;background:color-mix(in srgb,var(--mute) 16%,transparent);padding:3px;border-radius:99px;min-width:70px;justify-content:flex-end}
+.seg button{border:0;background:none;width:34px;height:28px;border-radius:99px;font:inherit;font-weight:600;color:var(--mute);cursor:pointer;transition:all .3s var(--ease)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.rate{font-size:12px;color:var(--mute);display:flex;align-items:center;gap:4px;margin-top:6px;flex-wrap:wrap;animation:fade .4s var(--ease)}
+.rate b{color:var(--ink);font-weight:600}
+.icon.xs{width:24px;height:24px}.icon.xs .ic{width:14px;height:14px}
+.rate-in{width:84px;font:inherit;font-size:12px;color:var(--ink);background:var(--bg);border:1.5px solid var(--accent);border-radius:8px;padding:2px 6px;outline:0}
+.due.soon{color:#c77700}.due.late{color:var(--red);font-weight:600}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}.head h3{margin:0}.head b{color:var(--ink);font-weight:600}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--mute);font-size:12px;margin-top:12px}.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.gb{transform-box:fill-box;transform-origin:bottom;animation:grow .8s var(--ease) both;cursor:pointer;transition:opacity .2s}
+.gb.a{fill:color-mix(in srgb,var(--mute) 45%,transparent)}.gb.ok{fill:var(--green)}.gb.late{fill:var(--red)}
+.chart:hover .gb{opacity:.5}.chart .gb:hover{opacity:1}
+.newtask{flex-wrap:wrap;row-gap:8px}
+.newtask input[name=t]{flex:1 1 180px}
+.newtask input.dl{flex:none;width:auto;border-left:1px solid var(--line);padding-left:14px;font-size:14px;color:var(--mute)}
+@media(max-width:760px){.newtask input[name=t]{flex:1 1 100%}.newtask input.pr{flex:1 1 80px;width:auto;border-left:0;padding-left:0}.newtask input.dl{flex:1 1 150px;border-left:0;padding-left:0}}

@@ -33,7 +33,7 @@
       <button data-view="tasks" aria-label="Pending"><svg class="ic"><use href="#i-list"/></svg><span>Pending</span></button>
       <i class="pill" id="pill"></i>
     </nav>
-    <select id="currency" class="cur" aria-label="Currency"></select>
+    <div class="seg" id="currency" role="group" aria-label="Currency"><button data-cur="USD" aria-label="US dollars">$</button><button data-cur="INR" aria-label="Indian rupees">₹</button></div>
   </header>
   <main id="view"></main>
 </div>
@@ -43,9 +43,10 @@
     <h2 id="dlgTitle">New commission</h2>
     <label>Name<input name="name" required maxlength="80" placeholder="Logo design"></label>
     <div class="row2">
-      <label>Price<input name="price" type="number" min="0" step="0.01" required placeholder="0.00" inputmode="decimal"></label>
+      <label><span id="priceText">Price</span><input name="price" type="number" min="0" step="0.01" required placeholder="0.00" inputmode="decimal"></label>
       <label id="dateLabel">Date<input name="date" type="date" required></label>
     </div>
+    <label id="dueLabel" hidden>Deadline<input name="due" type="datetime-local"></label>
     <div class="actions">
       <button type="button" class="btn ghost" id="cancel">Cancel</button>
       <button type="submit" class="btn primary">Save</button>

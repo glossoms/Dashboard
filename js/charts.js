@@ -53,5 +53,22 @@
     return s + '</svg>';
   }
 
-  root.Charts = { bars, line, niceMax };
+  /** Grouped bars: items = [{label, a, b, late, tip}] — a = allotted, b = actual */
+  function grouped(items) {
+    if (!items.length) return empty('Complete a pending commission that has a deadline');
+    const max = niceMax(Math.max(...items.flatMap(i => [i.a, i.b])));
+    const step = iw / items.length, bw = Math.min(24, step * 0.3), gap = 4;
+    let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${frame(max)}`;
+    items.forEach((it, i) => {
+      const cx = P.l + step * i + step / 2, tip = it.tip.replace(/"/g, '&quot;');
+      [[it.a, 'a', cx - bw - gap / 2], [it.b, it.late ? 'late' : 'ok', cx + gap / 2]].forEach(([v, cls, x], k) => {
+        const h = Math.max(2, (v / max) * ih);
+        s += `<rect class="gb ${cls}" data-tip="${tip}" x="${x}" y="${P.t + ih - h}" width="${bw}" height="${h}" rx="${Math.min(7, bw / 2)}" style="animation-delay:${i * 50 + k * 80}ms"/>`;
+      });
+      s += `<text class="axis" x="${cx}" y="${H - 8}" text-anchor="middle">${it.label}</text>`;
+    });
+    return s + '</svg>';
+  }
+
+  root.Charts = { bars, line, grouped, niceMax };
 })(window);
