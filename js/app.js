@@ -7,7 +7,7 @@
   state.clients = (state.clients || []).map(c => Object.assign({ experiences: [] }, c));
   const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
   let view = location.hash.slice(1) || 'today';
-  let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null, editingPercentId = null;
+  let editingId = null, editingRate = false, overviewRangeOpen = false, editingAwaitingId = null, editingPercentId = null, editingTimeId = null;
   const persist = () => G.save(state);
   const syncBrand = () => { const brand = $('#brand'); if (brand) brand.textContent = state.name || 'Gloom'; };
 
@@ -214,10 +214,14 @@
   }
 
   function taskItem(t) {
-    const running = !!t.startedAt;
+    const running = !!t.startedAt, elapsed = G.taskElapsed(t), seconds = Math.floor(elapsed / 1000);
+    const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60, secs = seconds % 60;
+    const timerControl = editingTimeId === t.id
+      ? `<form class="manual-time-form" id="manualElapsedForm" data-id="${t.id}"><span class="manual-time-label">Time taken</span><div class="manual-time-fields"><input id="manualHours" name="hours" type="number" min="0" step="1" value="${hours}" aria-label="Hours" required><span>h</span><input name="minutes" type="number" min="0" max="59" step="1" value="${minutes}" aria-label="Minutes" required><span>m</span><input name="seconds" type="number" min="0" max="59" step="1" value="${secs}" aria-label="Seconds" required><span>s</span><button class="btn primary" type="submit">Save</button><button class="btn ghost manual-time-cancel" type="button" data-act="canceledittime" aria-label="Cancel time edit">Cancel</button></div></form>`
+      : `<button class="time time-edit" type="button" data-act="edittime" data-id="${t.id}" aria-label="Edit tracked time" title="Edit tracked time"><span data-timer="${t.id}">${clock(elapsed)}</span><span class="timer-edit-hint">${icon('edit')}<span>Edit</span></span></button>`;
     return `<li class="item task ${running ? 'running' : ''}">
       ${avatar(clientOf(t.clientId), 'sm')}<div class="grow"><div class="name">${esc(t.title)}</div><div class="muted">${clientOf(t.clientId) ? esc(clientOf(t.clientId).name) + ' · ' : ''}${t.rateType === 'percent' ? `${Number(t.percentRate || 0)}% monthly` : money(t.price || 0)}${t.deadline ? (d => ` · <span class="due ${d.cls}" data-due="${t.deadline}">${d.text}</span>`)(dueInfo(t.deadline)) : ''}</div></div>
-      <span class="time" data-timer="${t.id}">${clock(G.taskElapsed(t))}</span>
+      ${timerControl}
       <button class="icon ${running ? 'live' : ''}" data-act="${running ? 'pause' : 'start'}" data-id="${t.id}" aria-label="${running ? 'Pause' : 'Start'}">${icon(running ? 'pause' : 'play')}</button>
       <button class="icon" data-act="reset" data-id="${t.id}" aria-label="Reset timer">${icon('reset')}</button>
       <button class="icon" data-act="edittask" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button>
@@ -347,6 +351,17 @@
     start: id => { const t = task(id); if (!t.startedAt) { t.startedAt = Date.now(); if (!t.firstStart) t.firstStart = t.startedAt; } persist(); render(false); },
     pause: id => { pauseT(task(id)); persist(); render(false); },
     reset: id => { const t = task(id), was = !!t.startedAt; t.elapsed = 0; t.startedAt = was ? Date.now() : null; t.firstStart = t.startedAt; persist(); render(false); },
+    edittime: id => { editingTimeId = id; render(false); const input = $('#manualHours'); if (input) input.focus(); },
+    canceledittime: () => { editingTimeId = null; render(false); },
+    saveelapsed: id => {
+      const t = task(id), form = $('#manualElapsedForm');
+      if (!t || !form) return;
+      const h = Number(form.elements.hours.value), m = Number(form.elements.minutes.value), s = Number(form.elements.seconds.value);
+      if (![h, m, s].every(Number.isFinite) || h < 0 || m < 0 || m > 59 || s < 0 || s > 59) return;
+      t.elapsed = Math.floor((h * 3600 + m * 60 + s) * 1000);
+      if (t.startedAt) t.startedAt = Date.now();
+      editingTimeId = null; persist(); render(false);
+    },
     edittask: id => openDialog(id, 'task'),
     deltask: id => { const t = task(id); if (t && confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter(x => x.id !== id); persist(); render(false); } },
     expand: (id, btn) => openBig(id, btn.closest('.card')),
@@ -456,6 +471,7 @@
   }
   document.addEventListener('submit', e => {
     const fid = e.target.id;
+    if (fid === 'manualElapsedForm') { e.preventDefault(); actions.saveelapsed(e.target.dataset.id); return; }
     if (fid === 'revenueTargetForm') {
       e.preventDefault();
       const value = parseFloat(e.target.elements.namedItem('target').value);

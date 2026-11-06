@@ -367,6 +367,22 @@ textarea.attn:focus{border-style:solid;outline:0}
 @media(max-width:560px){.experience-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}.experience-add{min-height:112px}.experience-total{gap:4px 6px}.experience-total strong{font-size:30px}.experience-input-row{align-items:stretch;flex-direction:column}.experience-input-row .btn{justify-content:center}}
 @media(hover:none){.experience-remove{opacity:1}}
 
+/* The pending timer stays quiet until hovered or keyboard-focused. */
+.task .time-edit{position:relative;display:inline-flex;align-items:center;gap:0;border:0;padding:6px 7px;border-radius:9px;background:transparent;color:var(--mute);font:inherit;font-variant-numeric:tabular-nums;cursor:pointer}
+.task .time-edit:hover,.task .time-edit:focus-visible{color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);outline:0}
+.timer-edit-hint{position:absolute;z-index:4;left:calc(100% + 5px);top:50%;display:flex;align-items:center;gap:4px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:11px;line-height:1;box-shadow:var(--shadow);opacity:0;transform:translate(-4px,-50%);pointer-events:none;transition:opacity .18s,transform .18s}
+.timer-edit-hint .ic{width:12px;height:12px;color:var(--accent)}
+.time-edit:hover .timer-edit-hint,.time-edit:focus-visible .timer-edit-hint{opacity:1;transform:translate(0,-50%)}
+.manual-time-form{display:grid;gap:4px;align-content:center}
+.manual-time-label{font-size:10px;color:var(--mute);font-weight:600}
+.manual-time-fields{display:flex;align-items:center;gap:4px;color:var(--mute);font-size:11px;font-variant-numeric:tabular-nums}
+.manual-time-fields input{width:48px;min-width:0;padding:6px 4px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;text-align:center}
+.manual-time-fields input:focus{outline:2px solid color-mix(in srgb,var(--accent) 35%,transparent);border-color:var(--accent)}
+.manual-time-fields .btn{padding:7px 10px;font-size:11px}
+.manual-time-cancel{white-space:nowrap}
+@media(max-width:760px){.task .manual-time-form{order:1;flex:1 1 100%}.manual-time-fields{flex-wrap:wrap}}
+@media(hover:none){.timer-edit-hint{position:static;opacity:.72;transform:none;border:0;background:transparent;padding:0;box-shadow:none}.time-edit{gap:5px!important}}
+
 .overview-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 #overviewRange{font:inherit;font-size:12px;font-weight:600;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 10px;outline:0;cursor:pointer}
 #overviewRange:focus-visible{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
@@ -428,3 +444,7 @@ textarea.attn:focus{border-style:solid;outline:0}
 @media(max-width:560px){#view[data-view="overview"]{gap:18px}.overview-section-label{margin-bottom:-7px}.overview-card-title{margin-bottom:10px}}
 
 .task-rate-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-2px 0 14px}.task-rate-picker .pay-picker{flex:none}.task-rate-picker .pay-option{min-width:82px}
+
+/* Keep the full elapsed-time control blue while its task is running. */
+.task.running .time-edit{color:var(--accent)}
+
