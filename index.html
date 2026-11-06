@@ -78,6 +78,14 @@
     <div class="actions"><button class="btn primary" type="submit">Continue</button></div>
   </form>
 </dialog>
+<dialog id="dayConfirm" class="welcome-dialog" aria-labelledby="dayConfirmTitle">
+  <form method="dialog" autocomplete="off">
+    <div class="eyebrow">End of day</div>
+    <h2 id="dayConfirmTitle">Are you sure you want to end today?</h2>
+    <p class="muted welcome-copy">You’ll get a quick look back at what you finished.</p>
+    <div class="actions"><button class="btn ghost" value="cancel">Keep going</button><button class="btn primary" value="yes">End today</button></div>
+  </form>
+</dialog>
 <dialog id="big" class="bigdlg" aria-labelledby="bigTitle">
   <div class="big-in">
     <div class="big-head"><div><h2 id="bigTitle"></h2><div class="muted" id="bigSub"></div></div>
@@ -98,11 +106,13 @@
 </dialog>
 <input type="file" id="icsFile" accept=".ics,text/calendar" hidden>
 <div id="splash" class="splash" hidden>
+  <button class="sp-secret-close" id="spSecretClose" aria-label="Close day recap" title="Close recap">×</button>
   <div class="sp-in">
     <div class="sp-topline"><div class="eyebrow" id="spDate"></div><button class="sp-skip" id="spSkip">Skip intro</button></div>
     <div class="sp-focus"><h1 id="spGreet"></h1><blockquote id="spQuote" class="sp-quote"></blockquote><cite id="spAuthor"></cite></div>
     <section class="sp-brief" id="spBrief" aria-live="polite"></section>
     <button class="btn primary" id="spGo">Start my day</button>
+    <p class="sp-farewell" id="spFarewell" hidden>See you tomorrow.</p>
   </div>
 </div>
 <div id="tip" class="tip"></div>

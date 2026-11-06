@@ -300,6 +300,29 @@ body.splashing{overflow:hidden}
 .sp-topline{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;animation:sp-reveal .8s .25s var(--ease) both}
 .sp-skip{border:0;background:transparent;color:var(--mute);font:inherit;font-size:13px;padding:8px 12px;border-radius:999px;cursor:pointer;transition:color .25s,background .25s}
 .sp-skip:hover{color:var(--ink);background:color-mix(in srgb,var(--mute) 12%,transparent)}
+.sp-secret-close{position:fixed;z-index:2;top:0;right:0;width:76px;height:76px;display:grid;place-items:start end;padding:14px;border:0;border-radius:0 0 0 28px;background:transparent;color:var(--mute);font:inherit;font-size:24px;font-weight:300;line-height:1;opacity:0;cursor:pointer;transition:opacity .22s,color .22s,background .22s}
+.sp-secret-close:hover,.sp-secret-close:focus-visible{opacity:1;color:var(--ink);background:color-mix(in srgb,var(--mute) 9%,transparent);outline:0}
+.sp-farewell{margin-top:8px;color:var(--mute);font-size:13px;letter-spacing:.02em;animation:fade .8s .5s var(--ease) both}
+.sp-commission-sequence{width:min(560px,100%);min-height:116px;display:grid;place-items:center;margin:28px auto 20px}
+.sp-commission-card{position:relative;width:100%;min-height:92px;display:grid;align-content:center;gap:8px;padding:18px 22px;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--card) 80%,transparent);text-align:center;animation:commission-arrive .65s var(--ease) both}
+@keyframes commission-arrive{from{opacity:0;transform:scale(1.04) translateY(8px);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+.sp-commission-count{font-size:10px;letter-spacing:.13em;color:var(--mute);font-variant-numeric:tabular-nums}
+.sp-commission-name{position:relative;display:inline-block;justify-self:center;max-width:100%;font-size:clamp(18px,3vw,25px);font-weight:600;letter-spacing:-.025em;overflow-wrap:anywhere}
+.sp-commission-cross{position:absolute;left:-3%;top:50%;width:106%;height:3px;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 72%,transparent),var(--accent) 20%,var(--accent));transform:scaleX(0) rotate(-3deg);transform-origin:left center;box-shadow:0 0 7px color-mix(in srgb,var(--accent) 46%,transparent),0 0 18px color-mix(in srgb,var(--accent) 28%,transparent)}
+.sp-commission-card.crossing .sp-commission-cross{animation:commission-cross .72s cubic-bezier(.16,.86,.25,1) forwards}
+@keyframes commission-cross{0%{transform:scaleX(0) rotate(-3deg)}65%{transform:scaleX(1.04) rotate(-3deg)}82%{transform:scaleX(.98) rotate(-3deg)}100%{transform:scaleX(1) rotate(-3deg)}}
+.sp-commission-card.fade{opacity:.45;transform:scale(.98);filter:blur(1px);transition:opacity .6s ease,transform .6s var(--ease),filter .6s ease}
+.sp-encouragement{margin-top:24px;color:var(--ink);font-size:15px;text-align:center;opacity:0;transform:translateY(5px);transition:opacity .6s ease,transform .6s var(--ease)}
+.sp-encouragement.shown{opacity:1;transform:none}
+.sp-no-commissions{color:var(--mute);font-size:13px;text-align:center;animation:fade .7s var(--ease) both}
+.sp-commission-overview{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px}
+.sp-summary-item{position:relative;min-width:0;overflow:hidden;display:flex;align-items:center;gap:10px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--card) 72%,transparent);opacity:0;transform:translateY(8px) scale(.98);transition:opacity .4s ease,transform .5s var(--ease)}
+.sp-summary-item.in{opacity:1;transform:none;transition-delay:calc(var(--row)*65ms)}
+.sp-summary-name{position:relative;min-width:0;overflow-wrap:anywhere;color:var(--mute)}
+.sp-summary-name::after{content:"";position:absolute;left:-3%;right:-3%;top:50%;height:1.5px;border-radius:99px;background:color-mix(in srgb,var(--mute) 78%,transparent);transform:scaleX(0);transform-origin:left}
+.sp-summary-item.in .sp-summary-name::after{animation:overview-cross .48s .18s var(--ease) forwards}
+@keyframes overview-cross{to{transform:scaleX(1)}}
+.sp-summary-check{display:grid;place-items:center;width:21px;height:21px;flex:none;border-radius:50%;background:color-mix(in srgb,var(--green) 17%,transparent);color:var(--green);font-size:12px;font-weight:700}
 .sp-focus{transform-origin:center;animation:sp-focus 2.5s var(--ease) both}
 @keyframes sp-focus{0%{opacity:0;filter:blur(10px);transform:scale(1.22)}32%{opacity:1;filter:none;transform:scale(1.12)}100%{opacity:1;filter:none;transform:scale(1)}}
 .sp-in h1{font-size:clamp(34px,6vw,58px);line-height:1.06;margin-bottom:8px}
@@ -447,4 +470,7 @@ textarea.attn:focus{border-style:solid;outline:0}
 
 /* Keep the full elapsed-time control blue while its task is running. */
 .task.running .time-edit{color:var(--accent)}
+
+
+.sp-secret-close[hidden]{display:none}
 

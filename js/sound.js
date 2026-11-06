@@ -28,7 +28,8 @@
     start: () => { tone(700, 0.05, { gain: 0.016 }); tone(1050, 0.08, { gain: 0.014, at: 0.04 }); },
     pause: () => tone(720, 0.08, { gain: 0.016, slide: 0.75 }),
     open: () => tone(520, 0.13, { gain: 0.014, slide: 1.5 }),
-    close: () => tone(640, 0.1, { gain: 0.012, slide: 0.7 })
+    close: () => tone(640, 0.1, { gain: 0.012, slide: 0.7 }),
+    cross: () => { tone(520, 0.12, { gain: 0.012, slide: 0.55, type: 'triangle' }); tone(310, 0.15, { gain: 0.009, at: 0.04, slide: 0.75, type: 'sine' }); }
   };
   root.Sound = {
     play(kind) { if (!on) return; try { (kinds[kind] || kinds.tap)(); } catch (e) { /* audio unavailable */ } },

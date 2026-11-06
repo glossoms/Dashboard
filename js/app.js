@@ -372,7 +372,7 @@
     delevent: id => { state.events = state.events.filter(x => x.id !== id); persist(); render(false); },
     importics: () => $('#icsFile').click(),
     newquote: async () => { const r = await Quotes.next(G.today(), state.quote); state.quote = { date: G.today(), text: r.text, author: r.author }; persist(); if (view === 'today') render(false); },
-    endtoday: () => showDaySplash('recap'),
+    endtoday: () => $('#dayConfirm').showModal(),
     addclient: () => openClient(),
     editclient: id => openClient(id),
     toggleclient: id => { openClientId = openClientId === id ? null : id; render(false); },
@@ -732,6 +732,10 @@
     state.name = name; persist(); syncBrand(); welcomeDlg.close();
     if (welcomeFirstRun) { welcomeFirstRun = false; startSplash(); }
   });
+  $('#dayConfirm').addEventListener('close', e => {
+    if (e.target.returnValue !== 'yes') return;
+    showDaySplash('recap');
+  });
   let splashMode = null;
   function splashGroup(title, items, emptyText, crossed) {
     const rows = items.map((item, i) => '<li class="sp-row ' + (crossed ? 'recap-row' : '') + '" style="--row:' + i + '"><i class="sp-dot">' + (crossed ? '✓' : '') + '</i><span>' + item + '</span></li>').join('');
@@ -755,29 +759,70 @@
     const todos = G.todosFor(state.todos, day).sort((a, b) => (a.created || 0) - (b.created || 0));
     const done = todos.filter(t => t.done).map(t => esc(t.title));
     const open = todos.filter(t => !t.done).map(t => esc(t.title));
-    const work = state.awaiting.filter(x => (x.finishedDate || '') === day).map(x => esc(x.name));
-    state.percentages.forEach(x => (x.works || []).forEach(w => { if (w.finishedAt && G.today(new Date(w.finishedAt)) === day) work.push(esc(w.name)); }));
-    const note = (state.notes[day] || '').trim() || 'Add a quick win, thought, or reminder on the Today page.';
-    return '<div class="sp-brief-title">' + (done.length ? 'You moved ' + done.length + ' thing' + (done.length === 1 ? '' : 's') + ' forward.' : 'A day still counts, even when it’s unfinished.') + '</div><div class="sp-groups">' +
+    const commissions = state.awaiting.filter(x => G.today(new Date(x.completedAt || x.finishedDate || x.created || 0)) === day).map(x => x.name);
+    state.commissions.forEach(x => {
+      if (x.payoutType === 'monthly-percentage') return;
+      const finished = x.completedAt || x.finishedDate || x.date || x.created;
+      if (finished && G.today(new Date(finished)) === day) commissions.push(x.name);
+    });
+    state.percentages.forEach(x => (x.works || []).forEach(w => { if (w.finishedAt && G.today(new Date(w.finishedAt)) === day) commissions.push(w.name); }));
+    const encouragement = commissions.length === 0 ? 'A day still counts. Tomorrow is another chance.' : commissions.length === 1 ? 'One commission wrapped. You showed up and saw it through.' : commissions.length < 4 ? `${commissions.length} commissions wrapped. That’s solid progress.` : `${commissions.length} commissions wrapped. Look at you go.`;
+    const note = (state.notes[day] || '').trim();
+    return '<div class="sp-brief-title">' + (done.length ? 'You moved ' + done.length + ' thing' + (done.length === 1 ? '' : 's') + ' forward.' : 'A day still counts, even when it’s unfinished.') + '</div>' +
+      '<div class="sp-commission-sequence" id="commissionMoment" data-count="' + commissions.length + '" data-encouragement="' + esc(encouragement) + '" data-items="' + esc(JSON.stringify(commissions)) + '" aria-live="polite"></div><div class="sp-groups">' +
       splashGroup('Done today', done, 'Your checklist is still waiting for its first win', true) +
       splashGroup('Still on your list', open, 'Your checklist is clear') +
-      splashGroup('Work finished', work, 'No completed work logged today', true) +
-      '</div><div class="sp-note"><span>Today’s note</span><p>' + esc(note) + '</p></div>';
+      '</div>' + (note ? '<div class="sp-note"><span>Today’s note</span><p>' + esc(note) + '</p></div>' : '') + '<p class="sp-encouragement" id="recapEncouragement" aria-live="polite"></p>';
+  }
+  let recapTimers = [];
+  function playCommissionRecap() {
+    recapTimers.forEach(clearTimeout); recapTimers = [];
+    const box = $('#commissionMoment'); if (!box) return;
+    const items = JSON.parse(box.dataset.items || '[]'), encouragement = box.dataset.encouragement || '';
+    let index = 0;
+    const next = () => {
+      if (splashMode !== 'recap' || !box.isConnected) return;
+      if (index >= items.length) {
+        if (!items.length) {
+          box.innerHTML = '<p class="sp-no-commissions">No commissions finished today.</p>';
+          const closing = $('#recapEncouragement'); if (closing) { closing.textContent = encouragement; closing.classList.add('shown'); }
+        } else {
+          box.innerHTML = '<div class="sp-commission-overview">' + items.map((name, i) => '<div class="sp-summary-item" style="--row:' + i + '"><span class="sp-summary-check">✓</span><span class="sp-summary-name">' + esc(name) + '</span></div>').join('') + '</div>';
+          requestAnimationFrame(() => box.querySelectorAll('.sp-summary-item').forEach(item => item.classList.add('in')));
+          recapTimers.push(setTimeout(() => {
+            if (splashMode !== 'recap') return;
+            const closing = $('#recapEncouragement'); if (closing) { closing.textContent = encouragement; closing.classList.add('shown'); }
+          }, 850));
+        }
+        return;
+      }
+      box.innerHTML = '<div class="sp-commission-card"><span class="sp-commission-count">' + String(index + 1).padStart(2, '0') + ' / ' + String(items.length).padStart(2, '0') + '</span><span class="sp-commission-name">' + esc(items[index]) + '<i class="sp-commission-cross" aria-hidden="true"></i></span></div>';
+      const card = box.firstElementChild;
+      recapTimers.push(setTimeout(() => { if (splashMode !== 'recap') return; card.classList.add('crossing'); Sound.play('cross'); }, 1150));
+      recapTimers.push(setTimeout(() => { if (splashMode === 'recap') card.classList.add('fade'); }, 1850));
+      recapTimers.push(setTimeout(() => { index++; next(); }, 2500));
+    };
+    next();
   }
   function dismissSplash() {
     const sp = $('#splash');
     if (sp.hidden) return;
     if (splashMode === 'morning') { state.lastSplash = G.today(); persist(); }
-    splashMode = null; Sound.play('done'); sp.classList.add('out');
+    splashMode = null; recapTimers.forEach(clearTimeout); recapTimers = []; Sound.play('done'); sp.classList.add('out');
     setTimeout(() => { sp.hidden = true; sp.classList.remove('out', 'recap'); document.body.classList.remove('splashing'); render(); }, 750);
   }
   async function showDaySplash(mode) {
     const sp = $('#splash'), day = G.today(), morning = mode === 'morning';
     splashMode = mode; $('#spDate').textContent = longDate();
-    $('#spGreet').textContent = morning ? 'Let’s start your day.' : 'Let’s close out today.';
+    $('#spGreet').textContent = morning ? 'Let’s start your day.' : 'That was today.';
     $('#spBrief').innerHTML = morning ? morningBrief(day) : recapBrief(day);
-    $('#spGo').textContent = morning ? 'Start my day' : 'Back to today';
-    $('#spSkip').textContent = morning ? 'Skip intro' : 'Close recap';
+    if (!morning) playCommissionRecap();
+    $('#spGo').textContent = 'Start my day';
+    $('#spGo').hidden = !morning;
+    $('#spSkip').textContent = 'Skip intro';
+    $('#spSkip').hidden = !morning;
+    $('#spFarewell').hidden = morning;
+    $('#spSecretClose').hidden = morning;
     $('#spQuote').innerHTML = '<span class="sk"></span>'; $('#spAuthor').textContent = '';
     sp.classList.remove('out', 'recap'); if (!morning) sp.classList.add('recap');
     sp.hidden = false; document.body.classList.add('splashing');
@@ -791,7 +836,8 @@
   async function startSplash() { if (state.lastSplash !== G.today()) await showDaySplash('morning'); }
   $('#spGo').addEventListener('click', dismissSplash);
   $('#spSkip').addEventListener('click', dismissSplash);
-  document.addEventListener('keydown', e => { if (!$('#splash').hidden && (e.key === 'Enter' || e.key === 'Escape')) dismissSplash(); });
+  $('#spSecretClose').addEventListener('click', dismissSplash);
+  document.addEventListener('keydown', e => { if (!$('#splash').hidden && splashMode === 'morning' && (e.key === 'Enter' || e.key === 'Escape')) dismissSplash(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && view === 'today') render(false); });
 
   /* ---------- Expanded chart view ---------- */
