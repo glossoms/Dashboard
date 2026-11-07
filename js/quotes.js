@@ -1,3 +1,4 @@
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['quotes.js'] = '9';
 /* Short, curated lines used for the daily quote and the morning intro. */
 (function (root) {
   const LINES = [
@@ -32,9 +33,15 @@
     ['The future depends on what you do today.', 'Mahatma Gandhi'],
     ['Be where your feet are.', 'Unknown']
   ];
-  const hash = s => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+  const hash = s => {
+    let h = 0;
+    for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return h;
+  };
   const asQuote = entry => ({ text: entry[0], author: entry[1], source: 'curated' });
-  function get(seed) { return Promise.resolve(asQuote(LINES[hash(seed) % LINES.length])); }
+  function get(seed) {
+    return Promise.resolve(asQuote(LINES[hash(seed) % LINES.length]));
+  }
   function next(seed, current) {
     const currentText = typeof current === 'string' ? current : current && current.text;
     let i = hash(seed + ':' + Date.now()) % LINES.length;
