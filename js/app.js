@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '9';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '10';
 (function () {
   const G = window.Gloom,
     $ = (s, r = document) => r.querySelector(s);
@@ -349,7 +349,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     const items = list
       .map(
         (c, i) => `<li class="item rise" data-key="${c.id}" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : ''}${c.payoutType === 'monthly-percentage' ? ` · ${Number(c.payoutRate || 0)}% monthly payout` : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : c.payoutType === 'monthly-percentage' && c.time > 0 ? ' · <1m' : ''}${c.payoutType === 'monthly-percentage' ? ` · ${Number(c.payoutRate || 0)}% monthly payout${Number.isFinite(Number(c.payoutWorkCount)) ? ` · ${Number(c.payoutWorkCount)} work${Number(c.payoutWorkCount) === 1 ? '' : 's'}` : ''}` : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
       <div class="price">${money(c.grossPrice ?? c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`
@@ -369,10 +369,10 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       .join('');
     const percentItems = percentages
       .map(c => {
-        const works = c.works && c.works.length ? c.works : [{ name: c.name }],
-          projectNames = works.map(w => w.name).join(' · '),
+        const works = Array.isArray(c.works) ? c.works : [{ name: c.name, time: 0 }],
+          projectNames = works.map(w => w.name).filter(Boolean).join(' · '),
           who = clientOf(c.clientId);
-        return `<li class="item percentage-item" data-key="${c.id}">${avatar(who, 'sm')}<div class="grow"><div class="name">${who ? esc(who.name) : esc(projectNames)}</div><div class="muted">${Number(c.percentRate || 0)}% monthly · ${works.length} finished work${works.length === 1 ? '' : 's'} · ${esc(projectNames)}</div><div class="muted">Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
+        return `<li class="item percentage-item" data-key="${c.id}">${avatar(who, 'sm')}<div class="grow"><div class="name">${who ? esc(who.name) : esc(c.name || projectNames)}</div><div class="muted">${Number(c.percentRate || 0)}% monthly · ${works.length} work${works.length === 1 ? '' : 's'} since last payout${projectNames ? ` · ${esc(projectNames)}` : ''}</div><div class="muted">Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
       ${editingPercentId === c.id ? `<div class="percent-entry"><label for="percentPayoutAmount">Amount received (USD)</label><input id="percentPayoutAmount" type="number" min="0.01" step="0.01" placeholder="0.00"><button class="btn primary" data-act="savepercent" data-id="${c.id}">Add payout</button><button class="btn ghost" data-act="cancelpercent">Cancel</button></div>` : `<button class="btn primary" data-act="recordpercent" data-id="${c.id}">${icon('plus')}<span>Record payout</span></button><button class="icon danger" data-act="endpercent" data-id="${c.id}" aria-label="End monthly percentage" title="End monthly percentage">${icon('close')}</button>`}</li>`;
       })
       .join('');
@@ -574,7 +574,9 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       });
     persist();
     Sound.play('add');
-    render(false);
+    const refreshCommissionList = !isTask && !!editingId;
+    editingId = null;
+    render(refreshCommissionList);
     e.preventDefault();
     Dom.closeDialog(dlg);
   });
@@ -654,19 +656,23 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       const c = state.percentages.find(x => x.id === id),
         amount = parseFloat($('#percentPayoutAmount').value);
       if (!c || !isFinite(amount) || amount <= 0) return;
-      const workNames = c.works && c.works.length ? c.works.map(w => w.name) : [c.name];
+      const works = Array.isArray(c.works) ? c.works.slice() : [{ name: c.name, time: 0 }];
+      const workNames = works.map(w => w.name).filter(Boolean);
+      const payoutTime = works.reduce((total, work) => total + Math.max(0, Number(work.time) || 0), 0);
       state.commissions.push({
         id: G.uid(),
-        name: workNames.join(', '),
+        name: workNames.join(', ') || `${Number(c.percentRate || 0)}% monthly payout`,
         price: Math.round(amount * 100) / 100,
         date: G.today(),
-        time: 0,
+        time: payoutTime,
         created: Date.now(),
         clientId: c.clientId || null,
         payoutRate: c.percentRate,
-        payoutWorkCount: workNames.length,
+        payoutWorkCount: works.length,
+        payoutWorkNames: workNames,
         payoutType: 'monthly-percentage'
       });
+      c.works = [];
       c.lastPayout = Date.now();
       c.nextPaymentAt = nextMonthStart(Date.now());
       c.payoutCount = (c.payoutCount || 0) + 1;
@@ -849,14 +855,14 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           existing =
             t.clientId && state.percentages.find(p => p.clientId === t.clientId && Number(p.percentRate) === rate);
         if (existing) {
-          if (!existing.works || !existing.works.length)
-            existing.works = [{ name: existing.name, finishedAt: existing.created || Date.now() }];
-          existing.works.push({ name: t.title, finishedAt: Date.now() });
+          if (!Array.isArray(existing.works))
+            existing.works = [{ name: existing.name, finishedAt: existing.created || Date.now(), time: 0 }];
+          existing.works.push({ name: t.title, finishedAt: Date.now(), time: Math.max(0, Number(t.elapsed) || 0) });
         } else
           state.percentages.unshift({
             id: G.uid(),
             name: t.title,
-            works: [{ name: t.title, finishedAt: Date.now() }],
+            works: [{ name: t.title, finishedAt: Date.now(), time: Math.max(0, Number(t.elapsed) || 0) }],
             percentRate: rate,
             clientId: t.clientId || null,
             created: Date.now(),

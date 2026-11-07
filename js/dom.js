@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['dom.js'] = '9';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['dom.js'] = '10';
 /* DOM helpers.
 
    morph(root, html)  Updates `root` in place to match `html` instead of rebuilding it. Because existing

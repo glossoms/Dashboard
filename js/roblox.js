@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['roblox.js'] = '9';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['roblox.js'] = '10';
 /* Roblox data (avatars + experience stats).
 
    Roblox's public APIs don't send CORS headers, so a read-only relay is used from the browser.
