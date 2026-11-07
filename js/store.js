@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '12';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '21';
 /* Data layer + calculations. Pure functions are exported for testing in Node. */
 (function (root) {
   const KEY = 'gloom.v1';

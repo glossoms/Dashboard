@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['quotes.js'] = '12';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['quotes.js'] = '21';
 /* Short, curated lines used for the daily quote and the morning intro. */
 (function (root) {
   const LINES = [

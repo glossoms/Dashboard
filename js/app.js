@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '12';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '21';
 (function () {
   const G = window.Gloom,
     $ = (s, r = document) => r.querySelector(s);
@@ -230,6 +230,29 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       unpaidPercentTime
     );
   }
+  function timeItemsFor(range, limit = null) {
+    const items = [
+      ...range.commissions
+        .filter(c => Number(c.time) > 0)
+        .map(c => ({
+          stamp: new Date(c.date + 'T00:00:00').getTime(),
+          label: String(c.name || 'Commission').slice(0, 9),
+          value: Math.max(0, Number(c.time) || 0) / 36e5,
+          tip: `${esc(c.name || 'Commission')} · ${hours(c.time)} tracked${c.payoutWorkCount ? ` · ${c.payoutWorkCount} works` : ''}`
+        })),
+      ...state.percentages.flatMap(contract =>
+        (Array.isArray(contract.works) ? contract.works : [])
+          .filter(work => work.time > 0 && work.finishedAt && G.today(new Date(work.finishedAt)) >= range.startKey)
+          .map(work => ({
+            stamp: Number(work.finishedAt),
+            label: String(work.name || 'Percentage work').slice(0, 9),
+            value: Math.max(0, Number(work.time) || 0) / 36e5,
+            tip: `${esc(work.name || 'Percentage work')} · ${hours(work.time)} tracked · unpaid percentage work`
+          }))
+      )
+    ].sort((a, b) => a.stamp - b.stamp);
+    return limit ? items.slice(-limit) : items;
+  }
   function overview() {
     const range = overviewData(),
       list = range.commissions,
@@ -277,26 +300,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       value: c.price * rate(),
       tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}`
     }));
-    const timeItems = [
-      ...sorted.filter(c => c.time > 0).map(c => ({
-        stamp: new Date(c.date + 'T00:00:00').getTime(),
-        label: esc(c.name.length > 9 ? c.name.slice(0, 8) + '…' : c.name),
-        value: c.time / 36e5,
-        tip: `${esc(c.name)} · ${hours(c.time)} tracked${c.payoutWorkCount ? ` · ${c.payoutWorkCount} works` : ''}`
-      })),
-      ...state.percentages.flatMap(contract =>
-        (Array.isArray(contract.works) ? contract.works : [])
-          .filter(work => work.time > 0 && work.finishedAt && G.today(new Date(work.finishedAt)) >= range.startKey)
-          .map(work => ({
-            stamp: Number(work.finishedAt),
-            label: esc(work.name.length > 9 ? work.name.slice(0, 8) + '…' : work.name),
-            value: work.time / 36e5,
-            tip: `${esc(work.name)} · ${hours(work.time)} tracked · unpaid percentage work`
-          }))
-      )
-    ]
-      .sort((a, b) => a.stamp - b.stamp)
-      .slice(-12);
+    const timeItems = timeItemsFor(range, 12);
     const lineItems = series.map(m => ({
       label: monthName(m.key),
       value: m.count,
@@ -355,9 +359,9 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     </section>
     <div class="overview-section-label">${icon('wallet')}<span>Commission trends</span></div>
     <section class="charts">
-      <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev' })}</div>
+      <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev', trend: true, trendDots: false, stagger: false })}</div>
       <div class="card rise">${expandBtn('cnt')}<div class="overview-card-title">${icon('grid')}<h3>Commissions per month</h3></div>${Charts.line(lineItems, { id: 'cnt' })}</div>
-      <div class="card rise">${expandBtn('time')}<div class="overview-card-title">${icon('clock')}<h3>Time per commission</h3></div>${Charts.bars(timeItems, { id: 'time', empty: 'Add tracked time to a paid commission to see it here' })}</div>
+      <div class="card rise">${expandBtn('time')}<div class="overview-card-title">${icon('clock')}<h3>Time per commission</h3></div>${Charts.bars(timeItems, { id: 'time', trend: true, trendDots: false, stagger: false, empty: 'Add tracked time to a paid commission to see it here' })}</div>
     </section>
     <div class="overview-section-label">${icon('flag')}<span>Delivery & monthly totals</span></div>
     <section class="charts"><div class="card rise">${expandBtn('ddl')}<div class="head"><div class="overview-card-title">${icon('flag')}<h3>Deadline vs actual <span class="muted">(${big ? 'days' : 'hours'})</span></h3></div><span class="muted">Avg turnaround <b>${ta.items.length ? dur(ta.avg) : '–'}</b></span></div>
@@ -458,7 +462,8 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
   function render(animate = true) {
     const el = $('#view'),
       html = { today: todayView, overview, commissions, tasks, clients: clientsView }[view]();
-    if (animate || el.dataset.view !== view) {
+    const enteringView = animate || el.dataset.view !== view;
+    if (enteringView) {
       el.dataset.view = view;
       el.innerHTML = html;
     } else Dom.morph(el, html);
@@ -1880,12 +1885,47 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           h,
           id: 'revB',
           big: true,
+          stagger: false,
+          trend: true,
+          trendDots: false,
           maxLabels: Math.floor((W - 62) / 70),
           avg: { value: avg * rate(), tip: `Average · ${money(avg)} per commission` },
           best: top,
           bestTip: `Top earner · ${esc(list[top].name)} · ${money(list[top].price)}`
         }),
-        legend: `<span>${key}Average price</span><span>${dotR}Top earner</span>`
+        legend: `<span>${key}Average price</span><span>${dotR}Top earner</span><span><i class="trend-key"></i>Revenue trend</span>`
+      };
+    },
+    time(w, h) {
+      const period = overviewData(),
+        items = timeItemsFor(period);
+      if (!items.length) return noData('Add tracked time to a paid commission to see it here', 'Time per commission', period.label);
+      const total = items.reduce((sum, item) => sum + item.value, 0),
+        average = total / items.length,
+        top = items.reduce((best, item, index) => (item.value > items[best].value ? index : best), 0),
+        W = Math.max(w, items.length * 64 + 80);
+      return {
+        title: 'Time per commission',
+        sub: `${period.label} · tracked hours, oldest to newest`,
+        chips:
+          chip('Tracked total', hours(total * 36e5)) +
+          chip('Average', hours(average * 36e5)) +
+          chip('Entries', items.length) +
+          chip('Longest', hours(items[top].value * 36e5)),
+        svg: Charts.bars(items, {
+          w: W,
+          h,
+          id: 'timeB',
+          big: true,
+          stagger: false,
+          trend: true,
+          trendDots: false,
+          maxLabels: Math.floor((W - 62) / 70),
+          avg: { value: average, tip: `Average · ${hours(average * 36e5)} per entry` },
+          best: top,
+          bestTip: `Longest · ${items[top].tip}`
+        }),
+        legend: `<span>${key}Average tracked time</span><span>${dotR}Longest entry</span><span><i class="trend-key"></i>Time trend</span>`
       };
     },
     cnt(w, h) {
