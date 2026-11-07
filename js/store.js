@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '10';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '12';
 /* Data layer + calculations. Pure functions are exported for testing in Node. */
 (function (root) {
   const KEY = 'gloom.v1';
@@ -121,19 +121,25 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     };
   }
 
-  /** Deadline vs actual. workStart = first Start click, actual = Complete click - workStart (wall-clock, not focus time). */
+  /** Deadline comparison: tracked time is the actual bar when available; elapsed wall-clock remains available for context. */
   function turnaround(commissions) {
     const items = commissions
       .filter(c => c.workStart && c.completedAt)
       .sort((a, b) => a.completedAt - b.completedAt)
-      .map(c => ({
-        id: c.id,
-        name: c.name,
-        focus: c.time || 0,
-        actual: Math.max(0, c.completedAt - c.workStart),
-        allotted: c.deadline ? Math.max(0, c.deadline - c.workStart) : null,
-        late: c.deadline ? c.completedAt > c.deadline : null
-      }));
+      .map(c => {
+        const elapsed = Math.max(0, c.completedAt - c.workStart),
+          tracked = Math.max(0, Number(c.time) || 0);
+        return {
+          id: c.id,
+          name: c.name,
+          focus: tracked,
+          elapsed,
+          tracked: tracked || elapsed,
+          actual: elapsed,
+          allotted: c.deadline ? Math.max(0, c.deadline - c.workStart) : null,
+          late: c.deadline ? c.completedAt > c.deadline : null
+        };
+      });
     const avg = items.length ? Math.round(items.reduce((s, i) => s + i.actual, 0) / items.length) : 0;
     return { items, avg, withDeadline: items.filter(i => i.allotted !== null) };
   }

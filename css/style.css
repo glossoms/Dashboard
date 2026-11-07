@@ -4006,3 +4006,20 @@ body::after {
 html:has(body.splashing) {
   scrollbar-gutter: auto;
 }
+
+.time-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.advanced-time {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 82%, var(--bg));
+}
+.advanced-time > .muted { margin-bottom: 7px; }
+@media (max-width: 420px) {
+  .time-values { gap: 6px; }
+}

@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '10';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '12';
 (function () {
   const G = window.Gloom,
     $ = (s, r = document) => r.querySelector(s);
@@ -211,11 +211,23 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     };
   }
   function overviewTime(range) {
+    const unpaidPercentTime = state.percentages.reduce(
+      (sum, contract) =>
+        sum +
+        (Array.isArray(contract.works) ? contract.works : []).reduce((workSum, work) => {
+          const finishedAt = new Date(work.finishedAt).getTime();
+          return finishedAt && G.today(new Date(finishedAt)) >= range.startKey
+            ? workSum + Math.max(0, Number(work.time) || 0)
+            : workSum;
+        }, 0),
+      0
+    );
     return (
       range.commissions.reduce((s, c) => s + (c.time || 0), 0) +
       state.tasks
         .filter(t => t.created && G.today(new Date(t.created)) >= range.startKey)
-        .reduce((s, t) => s + G.taskElapsed(t), 0)
+        .reduce((s, t) => s + G.taskElapsed(t), 0) +
+      unpaidPercentTime
     );
   }
   function overview() {
@@ -232,14 +244,14 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       hourlyRevenue = timedPaid.reduce((s, c) => s + c.price, 0),
       hourly = trackedPaidMs ? hourlyRevenue / (trackedPaidMs / 36e5) : null;
     const clientCounts = new Map();
-    list
+    state.commissions
       .filter(c => c.payoutType !== 'monthly-percentage')
       .forEach(c => {
         if (c.clientId) clientCounts.set(c.clientId, (clientCounts.get(c.clientId) || 0) + 1);
       });
-    const knownClients = clientCounts.size,
-      repeatClients = [...clientCounts.values()].filter(n => n > 1).length,
-      retention = knownClients ? Math.round((repeatClients / knownClients) * 100) : null;
+    const clientTotal = state.clients.length,
+      repeatClients = state.clients.filter(c => (clientCounts.get(c.id) || 0) > 1).length,
+      retention = clientTotal ? Math.round((repeatClients / clientTotal) * 100) : null;
     const allNet = state.commissions.map(c => ({ ...c, price: recognizedAmount(c) })),
       monthPair = G.monthlySeries(allNet, 2, range.nowKey),
       previousMonth = monthPair[0],
@@ -265,6 +277,26 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       value: c.price * rate(),
       tip: `${esc(c.name)} · ${money(c.price)} · ${fmtDate(c.date)}`
     }));
+    const timeItems = [
+      ...sorted.filter(c => c.time > 0).map(c => ({
+        stamp: new Date(c.date + 'T00:00:00').getTime(),
+        label: esc(c.name.length > 9 ? c.name.slice(0, 8) + '…' : c.name),
+        value: c.time / 36e5,
+        tip: `${esc(c.name)} · ${hours(c.time)} tracked${c.payoutWorkCount ? ` · ${c.payoutWorkCount} works` : ''}`
+      })),
+      ...state.percentages.flatMap(contract =>
+        (Array.isArray(contract.works) ? contract.works : [])
+          .filter(work => work.time > 0 && work.finishedAt && G.today(new Date(work.finishedAt)) >= range.startKey)
+          .map(work => ({
+            stamp: Number(work.finishedAt),
+            label: esc(work.name.length > 9 ? work.name.slice(0, 8) + '…' : work.name),
+            value: work.time / 36e5,
+            tip: `${esc(work.name)} · ${hours(work.time)} tracked · unpaid percentage work`
+          }))
+      )
+    ]
+      .sort((a, b) => a.stamp - b.stamp)
+      .slice(-12);
     const lineItems = series.map(m => ({
       label: monthName(m.key),
       value: m.count,
@@ -272,15 +304,17 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     }));
     const ta = G.turnaround(list),
       dl = ta.withDeadline.slice(-8);
-    const maxMs = Math.max(0, ...dl.flatMap(i => [i.allotted, i.actual])),
+    const maxMs = Math.max(0, ...dl.flatMap(i => [i.allotted, i.tracked, i.elapsed])),
       big = maxMs >= 48 * 36e5,
       div = big ? 864e5 : 36e5;
     const gItems = dl.map(i => ({
       label: esc(i.name.length > 9 ? i.name.slice(0, 8) + '…' : i.name),
       a: i.allotted / div,
-      b: i.actual / div,
+      b: i.tracked / div,
+      f: i.elapsed / div,
       late: i.late,
-      tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · actual ${dur(i.actual)}${i.late ? ' · late' : ' · on time'}`
+      tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · tracked ${dur(i.tracked)} · completed ${i.late ? 'late' : 'on time'}`,
+      ftip: `${esc(i.name)} · elapsed from Start to Complete ${dur(i.elapsed)}`
     }));
     const rows = series
       .slice()
@@ -316,17 +350,18 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     </section>
     <section class="stats insight-stats">
       ${stat('clock', 'Average hourly earnings', hourly === null ? '–' : money(hourly), trackedPaidMs ? 'net revenue per tracked hour' : 'No paid work time tracked')}
-      ${stat('users', 'Client retention', retention === null ? '–' : `${retention}%`, knownClients ? `${repeatClients} of ${knownClients} clients returned` : 'No client-linked commissions in period')}
+      ${stat('users', 'Client retention', retention === null ? '–' : `${retention}%`, clientTotal ? `${repeatClients} of ${clientTotal} clients returned` : 'Add clients to track repeat work')}
       ${stat('up', 'Monthly target progress', target ? `${Math.round(targetProgress)}%` : 'Not set', target ? `${money(currentMonthRevenue)} of ${money(target)} this month` : 'Set a goal below')}
     </section>
     <div class="overview-section-label">${icon('wallet')}<span>Commission trends</span></div>
     <section class="charts">
       <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev' })}</div>
       <div class="card rise">${expandBtn('cnt')}<div class="overview-card-title">${icon('grid')}<h3>Commissions per month</h3></div>${Charts.line(lineItems, { id: 'cnt' })}</div>
+      <div class="card rise">${expandBtn('time')}<div class="overview-card-title">${icon('clock')}<h3>Time per commission</h3></div>${Charts.bars(timeItems, { id: 'time', empty: 'Add tracked time to a paid commission to see it here' })}</div>
     </section>
     <div class="overview-section-label">${icon('flag')}<span>Delivery & monthly totals</span></div>
     <section class="charts"><div class="card rise">${expandBtn('ddl')}<div class="head"><div class="overview-card-title">${icon('flag')}<h3>Deadline vs actual <span class="muted">(${big ? 'days' : 'hours'})</span></h3></div><span class="muted">Avg turnaround <b>${ta.items.length ? dur(ta.avg) : '–'}</b></span></div>
-      ${Charts.grouped(gItems, { id: 'ddl' })}${gItems.length ? '<div class="legend"><span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span></div>' : ''}</div>
+      ${Charts.grouped(gItems, { id: 'ddl', focus: true })}${gItems.length ? '<div class="legend"><span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span><span>● Elapsed time</span><span>Bar: tracked time when available</span></div>' : ''}</div>
     <div class="card rise"><div class="overview-card-title">${icon('cal')}<h3>Monthly overview</h3></div>
       <div class="scroll"><table><thead><tr><th>Month</th><th>Count</th><th>Average</th><th class="r">Revenue</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${best ? `<div class="best">${icon('up')}<span>Top: ${bestClient ? `<b>${esc(bestClient.name)}</b> · ` : ''}<b>${esc(best.name)}</b> · ${money(best.price)}</span></div>` : ''}
@@ -349,7 +384,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     const items = list
       .map(
         (c, i) => `<li class="item rise" data-key="${c.id}" style="animation-delay:${Math.min(i, 10) * 30}ms">
-      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : c.payoutType === 'monthly-percentage' && c.time > 0 ? ' · <1m' : ''}${c.payoutType === 'monthly-percentage' ? ` · ${Number(c.payoutRate || 0)}% monthly payout${Number.isFinite(Number(c.payoutWorkCount)) ? ` · ${Number(c.payoutWorkCount)} work${Number(c.payoutWorkCount) === 1 ? '' : 's'}` : ''}` : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
+      ${avatar(clientOf(c.clientId), 'sm')}<div class="grow"><div class="name">${esc(c.name)}</div><div class="muted">${clientOf(c.clientId) ? esc(clientOf(c.clientId).name) + ' · ' : ''}${fmtDate(c.date)}${c.time >= 60000 ? ' · ' + hours(c.time) : c.time > 0 ? ' · <1m' : ''}${c.payoutType === 'monthly-percentage' ? ` · ${Number(c.payoutRate || 0)}% monthly payout${Number.isFinite(Number(c.payoutWorkCount)) ? ` · ${Number(c.payoutWorkCount)} work${Number(c.payoutWorkCount) === 1 ? '' : 's'}` : ''}` : ''}${c.netPrice != null ? ` · Gross ${money(c.grossPrice ?? c.price)} · Wise est. fee ${money(c.paymentFee || 0)} · Net ${money(c.netPrice)}` : ''}</div></div>
       <div class="price">${money(c.grossPrice ?? c.price)}</div>
       <button class="icon" data-act="edit" data-id="${c.id}" aria-label="Edit">${icon('edit')}</button>
       <button class="icon danger" data-act="del" data-id="${c.id}" aria-label="Delete">${icon('trash')}</button></li>`
@@ -371,15 +406,17 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       .map(c => {
         const works = Array.isArray(c.works) ? c.works : [{ name: c.name, time: 0 }],
           projectNames = works.map(w => w.name).filter(Boolean).join(' · '),
+          trackedTime = works.reduce((total, work) => total + Math.max(0, Number(work.time) || 0), 0),
+          trackedTimeLabel = trackedTime > 0 ? ` · ${hours(trackedTime)} tracked` : '',
           who = clientOf(c.clientId);
-        return `<li class="item percentage-item" data-key="${c.id}">${avatar(who, 'sm')}<div class="grow"><div class="name">${who ? esc(who.name) : esc(c.name || projectNames)}</div><div class="muted">${Number(c.percentRate || 0)}% monthly · ${works.length} work${works.length === 1 ? '' : 's'} since last payout${projectNames ? ` · ${esc(projectNames)}` : ''}</div><div class="muted">Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
+        return `<li class="item percentage-item" data-key="${c.id}">${avatar(who, 'sm')}<div class="grow"><div class="name">${who ? esc(who.name) : esc(c.name || projectNames)}</div><div class="muted">${Number(c.percentRate || 0)}% monthly · ${works.length} work${works.length === 1 ? '' : 's'} since last payout${trackedTimeLabel}${projectNames ? ` · ${esc(projectNames)}` : ''}</div><div class="muted">Next payout ${fmtDate(G.today(new Date(c.nextPaymentAt)))}</div><div class="next-payout" data-next-payout="${c.nextPaymentAt}">${countdown(c.nextPaymentAt)}</div></div>
       ${editingPercentId === c.id ? `<div class="percent-entry"><label for="percentPayoutAmount">Amount received (USD)</label><input id="percentPayoutAmount" type="number" min="0.01" step="0.01" placeholder="0.00"><button class="btn primary" data-act="savepercent" data-id="${c.id}">Add payout</button><button class="btn ghost" data-act="cancelpercent">Cancel</button></div>` : `<button class="btn primary" data-act="recordpercent" data-id="${c.id}">${icon('plus')}<span>Record payout</span></button><button class="icon danger" data-act="endpercent" data-id="${c.id}" aria-label="End monthly percentage" title="End monthly percentage">${icon('close')}</button>`}</li>`;
       })
       .join('');
     return `<div class="bar-head"><div><h1>Commissions</h1>${rateNote()}</div><button class="btn primary" data-act="add">${icon('plus')}<span>Add</span></button></div>
       ${awaiting.length ? `<section class="awaiting-section"><div class="section-title"><h2>Awaiting payment</h2><span class="muted">${awaiting.length} finished</span></div><ul class="list card">${waitingItems}</ul></section>` : ''}
       ${percentages.length ? `<section class="awaiting-section"><div class="section-title"><h2>Outstanding %</h2><span class="muted">Monthly payouts</span></div><ul class="list card">${percentItems}</ul></section>` : ''}
-      ${list.length ? `<section class="commission-history"><div class="section-title"><h2>Paid commissions</h2></div><ul class="list card">${items}</ul></section>` : `<div class="empty card">${icon('wallet')}<p>${awaiting.length ? 'No paid commissions yet' : 'No commissions yet'}</p></div>`}`;
+      ${list.length ? `<section class="commission-history"><div class="section-title"><h2>Paid commissions</h2><span class="muted">Double-click an entry for advanced settings</span></div><ul class="list card">${items}</ul></section>` : `<div class="empty card">${icon('wallet')}<p>${awaiting.length ? 'No paid commissions yet' : 'No commissions yet'}</p></div>`}`;
   }
 
   function taskItem(t) {
@@ -483,11 +520,13 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
   let editingKind = 'commission',
     editingTaskRateType = 'fixed';
   const task = id => state.tasks.find(t => t.id === id);
-  function openDialog(id, kind = 'commission') {
+  function openDialog(id, kind = 'commission', advanced = false) {
     editingKind = kind;
     editingId = id || null;
     const c = kind === 'task' ? task(id) : state.commissions.find(x => x.id === id);
-    $('#dlgTitle').textContent = kind === 'task' ? 'Edit pending commission' : c ? 'Edit commission' : 'New commission';
+    const advancedTime = advanced && kind !== 'task' && !!c;
+    $('#advancedTime').hidden = !advancedTime;
+    $('#dlgTitle').textContent = kind === 'task' ? 'Edit pending commission' : advancedTime ? 'Advanced commission settings' : c ? 'Edit commission' : 'New commission';
     $('#dateLabel').hidden = kind === 'task';
     $('#dueLabel').hidden = kind !== 'task';
     form.date.required = kind !== 'task';
@@ -511,6 +550,10 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     form.price.dataset.usd = c ? c.price : '';
     form.date.value = (c && c.date) || G.today();
     form.due.value = c && c.deadline ? toLocalInput(c.deadline) : '';
+    const totalSeconds = Math.floor(Math.max(0, Number(c && c.time) || 0) / 1000);
+    form.elements.timeHours.value = advancedTime ? Math.floor(totalSeconds / 3600) : '';
+    form.elements.timeMinutes.value = advancedTime ? Math.floor(totalSeconds / 60) % 60 : '';
+    form.elements.timeSeconds.value = advancedTime ? totalSeconds % 60 : '';
     dlg.showModal();
     form.name.focus();
   }
@@ -527,6 +570,17 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     }
     const unchanged = form.price.dataset.usd !== '' && entered === +form.price.dataset.orig;
     const price = percentTask ? 0 : unchanged ? +form.price.dataset.usd : Math.round((entered / rate()) * 1e4) / 1e4;
+    let editedTime = null;
+    if ($('#advancedTime').hidden === false && !isTask) {
+      const timeFields = ['timeHours', 'timeMinutes', 'timeSeconds'].map(n => form.elements[n].value),
+        [h, m, s] = timeFields.map(Number);
+      if (timeFields.some(v => v === '') || ![h, m, s].every(Number.isInteger) || h < 0 || m < 0 || m > 59 || s < 0 || s > 59) {
+        e.preventDefault();
+        $('#advancedTime').querySelector('input:invalid')?.focus();
+        return;
+      }
+      editedTime = (h * 3600 + m * 60 + s) * 1000;
+    }
     if (isTask)
       Object.assign(
         currentTask,
@@ -562,6 +616,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           clientId: form.client.value || null
         });
       } else Object.assign(existing, { name, price, date, clientId: form.client.value || null });
+      if (editedTime !== null) existing.time = editedTime;
     } else
       state.commissions.push({
         id: G.uid(),
@@ -968,6 +1023,11 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       render(false);
       if (c.dataset.cur === 'INR') refreshRate();
     }
+  });
+  document.addEventListener('dblclick', e => {
+    if (view !== 'commissions' || e.target.closest('button, a, input, select, textarea')) return;
+    const row = e.target.closest('.commission-history li.item[data-key]');
+    if (row) openDialog(row.dataset.key, 'commission', true);
   });
   document.addEventListener('change', e => {
     if (e.target.id === 'overviewRange') {
@@ -1877,30 +1937,30 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           'Deadline vs actual',
           'Allotted time against what you took'
         );
-      const maxMs = Math.max(...dl.flatMap(i => [i.allotted, i.actual])),
+      const maxMs = Math.max(...dl.flatMap(i => [i.allotted, i.tracked, i.elapsed])),
         days = maxMs >= 48 * 36e5,
         div = days ? 864e5 : 36e5;
       const onTime = dl.filter(i => !i.late).length,
-        sumA = dl.reduce((s, i) => s + i.actual, 0),
-        sumF = dl.reduce((s, i) => s + i.focus, 0),
-        avgA = sumA / dl.length;
+        sumElapsed = dl.reduce((s, i) => s + i.elapsed, 0),
+        sumTracked = dl.reduce((s, i) => s + i.tracked, 0),
+        avgTracked = sumTracked / dl.length;
       const items = dl.map(i => ({
         label: short(i.name, 11),
         a: i.allotted / div,
-        b: i.actual / div,
+        b: i.tracked / div,
         late: i.late,
-        f: i.focus / div,
-        tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · actual ${dur(i.actual)}${i.late ? ' · late by ' + dur(i.actual - i.allotted) : ' · ' + dur(i.allotted - i.actual) + ' to spare'}`,
-        ftip: `${esc(i.name)} · focused ${dur(i.focus)}${i.actual ? ` · ${Math.round((i.focus / i.actual) * 100)}% of elapsed time` : ''}`
+        f: i.elapsed / div,
+        tip: `${esc(i.name)} · deadline window ${dur(i.allotted)} · tracked ${dur(i.tracked)} · completed ${i.late ? 'late' : 'on time'}`,
+        ftip: `${esc(i.name)} · elapsed from Start to Complete ${dur(i.elapsed)}`
       }));
       const W = Math.max(w, dl.length * 96 + 80);
       return {
         title: 'Deadline vs actual',
-        sub: `In ${days ? 'days' : 'hours'} · actual runs from your first Start to Complete`,
+        sub: `In ${days ? 'days' : 'hours'} · bars use tracked time when available; dots show elapsed wall time`,
         chips:
           chip('On time', `${onTime} of ${dl.length} · ${Math.round((onTime / dl.length) * 100)}%`) +
-          chip('Avg turnaround', dur(ta.avg)) +
-          chip('Focus share', sumA ? `${Math.round((sumF / sumA) * 100)}% of elapsed` : '–'),
+          chip('Avg tracked', dur(avgTracked)) +
+          chip('Avg elapsed', dur(sumElapsed / dl.length)),
         svg: Charts.grouped(items, {
           w: W,
           h,
@@ -1908,9 +1968,9 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           big: true,
           focus: true,
           maxLabels: Math.floor((W - 62) / 90),
-          avg: { value: avgA / div, tip: `Average actual · ${dur(avgA)}` }
+          avg: { value: avgTracked / div, tip: `Average tracked time · ${dur(avgTracked)}` }
         }),
-        legend: `<span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>On time</span><span><i style="background:var(--red)"></i>Late</span><span>${dotR}Focused time</span><span>${key}Average actual</span>`
+        legend: `<span><i style="background:color-mix(in srgb,var(--mute) 45%,transparent)"></i>Deadline window</span><span><i style="background:var(--green)"></i>Tracked, on time</span><span><i style="background:var(--red)"></i>Tracked, late</span><span>${dotR}Elapsed time</span><span>${key}Average tracked</span>`
       };
     }
   };

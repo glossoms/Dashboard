@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['fx.js'] = '10';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['fx.js'] = '12';
 /* Cursor light.
    Two subtle layers that follow the pointer, like the specular light on Apple hardware:
    - #aura: a very soft ambient glow behind the page.

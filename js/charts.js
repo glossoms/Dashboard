@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['charts.js'] = '10';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['charts.js'] = '12';
 /* Dependency-free SVG charts. Each function takes (data, options) and returns an SVG string.
    Options: { w, h, id, big, pad } — `big` renders at a fixed pixel size for the expanded view. */
 (function (root) {
