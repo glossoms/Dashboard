@@ -5032,3 +5032,37 @@ body {
 .tabs button .nav-badge[hidden] {
   display: none;
 }
+
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.data-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.data-card .overview-card-title {
+  margin-bottom: 0;
+}
+.data-card .overview-card-title h2 {
+  font-size: 18px;
+}
+.data-card p {
+  max-width: 58ch;
+}
+.data-card label {
+  width: 100%;
+  margin: 0;
+}
+.data-status {
+  min-height: 1.4em;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .data-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

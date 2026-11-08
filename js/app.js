@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '11';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '13';
 (function () {
   const G = window.Gloom,
     $ = (s, r = document) => r.querySelector(s);
@@ -29,14 +29,15 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     isDown: () => true
   };
   let state = G.load();
-  const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients'];
+  const VIEWS = ['today', 'overview', 'commissions', 'tasks', 'clients', 'data'];
   let view = location.hash.slice(1) || 'today';
   let editingId = null,
     editingRate = false,
     overviewRangeOpen = false,
     editingAwaitingId = null,
     editingPercentId = null,
-    editingTimeId = null;
+    editingTimeId = null,
+    dataMessage = '';
   const persist = () => G.saveSoon(state);
   const syncBrand = () => {
     const brand = $('#brand');
@@ -456,12 +457,30 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       ${state.tasks.length ? `<ul class="list card">${state.tasks.map(taskItem).join('')}</ul>` : `<div class="empty card">${icon('list')}<p>Nothing pending</p></div>`}`;
   }
 
+  function dataView() {
+    return `<div class="bar-head"><div><div class="eyebrow">PORTABLE BACKUP</div><h1>Data</h1><p class="muted">Move your Gloom data between devices with a backup file.</p></div></div>
+      <section class="data-grid">
+        <article class="card data-card"><div class="overview-card-title">${icon('down')}<h2>Export your data</h2></div>
+          <p class="muted">Download a JSON backup containing your commissions, timers, clients, notes, schedule, and settings.</p>
+          <p class="muted">Running timers are paused in the backup; timers on this device keep running.</p>
+          <button class="btn primary" data-act="exportdata">Download backup</button>
+        </article>
+        <article class="card data-card"><div class="overview-card-title">${icon('upload')}<h2>Import a backup</h2></div>
+          <p class="muted">Choose a Gloom backup file saved on this device or transferred from another one.</p>
+          <label>Import method<select id="backupMode"><option value="merge">Merge — keep records; backup wins on matching IDs</option><option value="replace">Replace — use only the backup data</option></select></label>
+          <p class="muted">Merge also applies the backup’s settings. Replace downloads a backup of this device first.</p>
+          <button class="btn primary" data-act="choosebackup">Choose backup file</button>
+          <p class="data-status muted" id="dataStatus" role="status" aria-live="polite">${esc(dataMessage || 'Your data stays in this browser unless you export it.')}</p>
+        </article>
+      </section>`;
+  }
+
   /* ---------- Rendering ---------- */
   /* animate=true: entering a view (staggered entrance). animate=false: update in place, so transitions play,
      focus/scroll/typed text survive, and only new or removed items animate. */
   function render(animate = true) {
     const el = $('#view'),
-      html = { today: todayView, overview, commissions, tasks, clients: clientsView }[view]();
+      html = { today: todayView, overview, commissions, tasks, clients: clientsView, data: dataView }[view]();
     if (animate || el.dataset.view !== view) {
       el.dataset.view = view;
       el.innerHTML = html;
@@ -498,7 +517,8 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     overview: ['Overview', 'Overview'],
     commissions: ['Work', 'Commissions'],
     tasks: ['Work', 'Pending'],
-    clients: ['People', 'Clients']
+    clients: ['People', 'Clients'],
+    data: ['System', 'Data']
   };
   function setBadge(selector, n) {
     const el = $(selector);
@@ -701,6 +721,56 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     setTimeout(() => el.remove(), 2400);
   }
 
+  const BACKUP_FORMAT = 'gloom-dashboard-backup';
+  const BACKUP_LISTS = ['commissions', 'awaiting', 'percentages', 'tasks', 'clients', 'todos', 'events'];
+  function backupSnapshot(source = state) {
+    const exportedAt = Date.now(),
+      data = JSON.parse(JSON.stringify(source));
+    data.tasks = (data.tasks || []).map(t => ({ ...t, elapsed: G.taskElapsed(t, exportedAt), startedAt: null }));
+    return { format: BACKUP_FORMAT, version: 1, app: 'Gloom Dashboard', exportedAt: new Date(exportedAt).toISOString(), data };
+  }
+  function downloadJson(payload, filename) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+      url = URL.createObjectURL(blob),
+      link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function downloadBackup(prefix = 'Gloom-backup') {
+    G.flush();
+    downloadJson(backupSnapshot(), `${prefix}-${G.today()}.json`);
+  }
+  function mergeBackup(local, incoming) {
+    const merged = { ...local, ...incoming };
+    for (const field of BACKUP_LISTS) {
+      const items = [...(local[field] || [])],
+        positions = new Map();
+      items.forEach((item, index) => item && item.id && positions.set(item.id, index));
+      for (const item of incoming[field] || []) {
+        if (!item || typeof item !== 'object') continue;
+        if (!item.id) {
+          items.push({ ...item, id: G.uid() });
+          continue;
+        }
+        const index = positions.get(item.id);
+        if (index === undefined) {
+          positions.set(item.id, items.length);
+          items.push(item);
+        } else items[index] = item;
+      }
+      merged[field] = items;
+    }
+    merged.notes = { ...(local.notes || {}), ...(incoming.notes || {}) };
+    return G.normalize(merged);
+  }
+  function backupRecordCount(data) {
+    return BACKUP_LISTS.reduce((count, field) => count + (data[field] || []).length, 0);
+  }
+
   /* ---------- Actions ---------- */
   const pauseT = t => {
     if (t.startedAt) {
@@ -709,6 +779,12 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     }
   };
   const actions = {
+    exportdata: () => downloadBackup(),
+    choosebackup: () => {
+      const input = $('#backupFile');
+      input.value = '';
+      input.click();
+    },
     layoutmode: () => {
       layoutEditing = !layoutEditing;
       render(false);
@@ -1411,6 +1487,61 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     persist();
     render(false);
     toast(n ? `Imported ${n} event${n === 1 ? '' : 's'}` : 'No new events found');
+  });
+  $('#backupFile').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      if (file.size > 25 * 1024 * 1024) throw new Error('That backup is too large to import.');
+      const backup = JSON.parse(await file.text());
+      if (
+        !backup ||
+        backup.format !== BACKUP_FORMAT ||
+        backup.version !== 1 ||
+        !backup.data ||
+        typeof backup.data !== 'object' ||
+        Array.isArray(backup.data) ||
+        !BACKUP_LISTS.every(field => Array.isArray(backup.data[field]))
+      )
+        throw new Error('This file is not a valid Gloom backup.');
+      const checkKeys = value => {
+        if (!value || typeof value !== 'object') return;
+        for (const [key, child] of Object.entries(value)) {
+          if (key === '__proto__' || key === 'prototype' || key === 'constructor')
+            throw new Error('This backup contains an unsafe field.');
+          checkKeys(child);
+        }
+      };
+      checkKeys(backup.data);
+      const incoming = G.normalize(backup.data),
+        now = Date.now();
+      incoming.tasks = incoming.tasks.map(t => ({ ...t, elapsed: G.taskElapsed(t, now), startedAt: null }));
+      const mode = $('#backupMode')?.value || 'merge';
+      if (mode === 'replace') {
+        if (!confirm('Replace all data on this device with the backup? A backup of your current data will download first.')) {
+          dataMessage = 'Import cancelled. Your current data is unchanged.';
+          if (view === 'data') render(false);
+          return;
+        }
+        downloadBackup('Gloom-before-import');
+      }
+      const nextState = mode === 'replace' ? incoming : mergeBackup(state, incoming);
+      G.flush();
+      const serialized = JSON.stringify(nextState);
+      localStorage.setItem('gloom.v1', serialized);
+      if (localStorage.getItem('gloom.v1') !== serialized)
+        throw new Error('The browser could not save the imported data. Your current app data is unchanged.');
+      state = G.normalize(nextState);
+      dataMessage = `${mode === 'replace' ? 'Replaced' : 'Merged'} ${backupRecordCount(incoming)} records from ${file.name}.`;
+      syncSound();
+      syncBrand();
+      render(false);
+      toast(mode === 'replace' ? 'Backup restored' : 'Backup merged');
+    } catch (error) {
+      dataMessage = error && error.message ? error.message : 'Could not read this backup.';
+      if (view === 'data') render(false);
+    }
   });
 
   /* ---------- Clients ---------- */
