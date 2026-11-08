@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '21';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['store.js'] = '11';
 /* Data layer + calculations. Pure functions are exported for testing in Node. */
 (function (root) {
   const KEY = 'gloom.v1';
@@ -121,7 +121,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     };
   }
 
-  /** Deadline comparison: tracked time is the actual bar when available; elapsed wall-clock remains available for context. */
+  /** Compare allotted time with tracked work time while keeping elapsed wall time as context. */
   function turnaround(commissions) {
     const items = commissions
       .filter(c => c.workStart && c.completedAt)

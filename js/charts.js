@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['charts.js'] = '21';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['charts.js'] = '11';
 /* Dependency-free SVG charts. Each function takes (data, options) and returns an SVG string.
    Options: { w, h, id, big, pad } — `big` renders at a fixed pixel size for the expanded view. */
 (function (root) {
@@ -54,18 +54,10 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     items.forEach((it, i) => {
       const h = Math.max(2, (it.value / max) * c.ih),
         x = c.p.l + step * i + (step - bw) / 2;
-      s += bar(c, 'acc', x, c.p.t + c.ih - h, bw, h, it.tip, o.stagger === false ? 0 : i * 40);
+      s += bar(c, 'acc', x, c.p.t + c.ih - h, bw, h, it.tip, i * 40);
       if (i % every === 0)
         s += `<text class="axis" x="${x + bw / 2}" y="${c.h - 10}" text-anchor="middle">${it.label}</text>`;
     });
-    if (o.trend) {
-      const points = items.map((it, i) => [c.p.l + step * i + step / 2, yOf(c, it.value, max)]),
-        d = points.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
-      s += `<path class="trend-line" d="${d}"/>`;
-      if (o.trendDots !== false) points.forEach((p, i) => {
-        s += `<circle class="trend-dot" data-tip="${q(items[i].tip)}" cx="${p[0]}" cy="${p[1]}" r="4.2" style="animation-delay:${o.stagger === false ? 0 : 350 + i * 35}ms"/>`;
-      });
-    }
     if (o.avg) s += endMark(c, yOf(c, o.avg.value, max), o.avg.tip);
     if (o.best != null) {
       const it = items[o.best],

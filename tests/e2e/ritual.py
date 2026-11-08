@@ -149,6 +149,27 @@ with sync_playwright() as p:
     check(pg.locator('#aura').count() == 0, 'reduced motion: no cursor light')
     pg.click('[data-view=overview]'); pg.wait_for_timeout(300); check(pg.evaluate("document.getElementById('view').dataset.view") == 'overview', 'reduced motion: navigation is instant and works'); print('A3 ok'); ctx.close()
 
+    # ---------- A4: sidebar shell ----------
+    ctx, pg, errs = page(b, seed())
+    pg.goto(URL); pg.wait_for_timeout(1200)
+    check(pg.locator('#side .nav-label').count() == 3 and pg.locator('#tabs button').count() == 5, 'grouped sidebar navigation')
+    check(pg.inner_text('#badgeTasks') == '2' and pg.inner_text('#badgeComm') == '1', 'count badges show pending tasks and awaiting payments')
+    check('Working on' in pg.inner_text('#sideCard') and 'Brand kit' in pg.inner_text('#sideCard'), 'side card shows the running timer')
+    for v, group, label in (('overview', 'Overview', 'Overview'), ('tasks', 'Work', 'Pending'), ('clients', 'People', 'Clients')):
+        pg.click('[data-view=%s]' % v); pg.wait_for_timeout(900)
+        check(pg.inner_text('#crumb') == label and pg.inner_text('#crumbGroup') == group, 'breadcrumb for ' + v)
+        d = pg.evaluate("(()=>{const b=document.querySelector('#tabs button.on').getBoundingClientRect(),p=document.getElementById('pill').getBoundingClientRect();return Math.abs(b.top-p.top)+Math.abs(b.left-p.left)+Math.abs(b.height-p.height)})()")
+        check(d < 3, 'highlight sits exactly on the active item (off by %.1fpx)' % d)
+    pg.click('[data-act=pause][data-id=t1]'); pg.wait_for_timeout(300)
+    check('No timer running' in pg.inner_text('#sideCard'), 'side card updates when the timer stops')
+    check(not errs, 'shell: no errors %s' % errs[:2]); print('A4 ok'); ctx.close()
+    ctx, pg, errs = page(b, seed(), width=390)
+    pg.goto(URL); pg.wait_for_timeout(1200)
+    box = pg.evaluate("(()=>{const r=document.getElementById('side').getBoundingClientRect();return [r.top, innerHeight, r.height]})()")
+    check(abs(box[0] + box[2] - box[1]) < 2, 'mobile: nav is a bottom bar')
+    check(pg.evaluate("getComputedStyle(document.getElementById('badgeTasks')).display") != 'none', 'mobile: badges visible')
+    check(pg.evaluate('document.documentElement.scrollWidth') <= 390, 'mobile: no overflow'); print('A5 ok'); ctx.close()
+
     # ---------- B: Roblox relay DOWN -> circuit breaker keeps requests (and console noise) minimal ----------
     clients = [{'id': 'k%d' % i, 'name': 'Client %d' % i, 'roblox': str(i), 'experiences': []} for i in range(1, 8)]
     cnt = {'n': 0}; ctx, pg, errs = page(b, seed(clients=clients), proxy='down', counters=cnt)

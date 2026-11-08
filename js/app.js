@@ -1,4 +1,4 @@
-if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '21';
+if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {})['app.js'] = '11';
 (function () {
   const G = window.Gloom,
     $ = (s, r = document) => r.querySelector(s);
@@ -236,7 +236,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
         .filter(c => Number(c.time) > 0)
         .map(c => ({
           stamp: new Date(c.date + 'T00:00:00').getTime(),
-          label: String(c.name || 'Commission').slice(0, 9),
+          label: esc(String(c.name || 'Commission').slice(0, 9)),
           value: Math.max(0, Number(c.time) || 0) / 36e5,
           tip: `${esc(c.name || 'Commission')} · ${hours(c.time)} tracked${c.payoutWorkCount ? ` · ${c.payoutWorkCount} works` : ''}`
         })),
@@ -245,7 +245,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           .filter(work => work.time > 0 && work.finishedAt && G.today(new Date(work.finishedAt)) >= range.startKey)
           .map(work => ({
             stamp: Number(work.finishedAt),
-            label: String(work.name || 'Percentage work').slice(0, 9),
+            label: esc(String(work.name || 'Percentage work').slice(0, 9)),
             value: Math.max(0, Number(work.time) || 0) / 36e5,
             tip: `${esc(work.name || 'Percentage work')} · ${hours(work.time)} tracked · unpaid percentage work`
           }))
@@ -359,9 +359,9 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
     </section>
     <div class="overview-section-label">${icon('wallet')}<span>Commission trends</span></div>
     <section class="charts">
-      <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev', trend: true, trendDots: false, stagger: false })}</div>
+      <div class="card rise">${expandBtn('rev')}<div class="overview-card-title">${icon('wallet')}<h3>Revenue per commission</h3></div>${Charts.bars(barItems, { id: 'rev', stagger: false })}</div>
       <div class="card rise">${expandBtn('cnt')}<div class="overview-card-title">${icon('grid')}<h3>Commissions per month</h3></div>${Charts.line(lineItems, { id: 'cnt' })}</div>
-      <div class="card rise">${expandBtn('time')}<div class="overview-card-title">${icon('clock')}<h3>Time per commission</h3></div>${Charts.bars(timeItems, { id: 'time', trend: true, trendDots: false, stagger: false, empty: 'Add tracked time to a paid commission to see it here' })}</div>
+      <div class="card rise">${expandBtn('time')}<div class="overview-card-title">${icon('clock')}<h3>Time per commission</h3></div>${Charts.bars(timeItems, { id: 'time', stagger: false, empty: 'Add tracked time to a paid commission to see it here' })}</div>
     </section>
     <div class="overview-section-label">${icon('flag')}<span>Delivery & monthly totals</span></div>
     <section class="charts"><div class="card rise">${expandBtn('ddl')}<div class="head"><div class="overview-card-title">${icon('flag')}<h3>Deadline vs actual <span class="muted">(${big ? 'days' : 'hours'})</span></h3></div><span class="muted">Avg turnaround <b>${ta.items.length ? dur(ta.avg) : '–'}</b></span></div>
@@ -462,8 +462,7 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
   function render(animate = true) {
     const el = $('#view'),
       html = { today: todayView, overview, commissions, tasks, clients: clientsView }[view]();
-    const enteringView = animate || el.dataset.view !== view;
-    if (enteringView) {
+    if (animate || el.dataset.view !== view) {
       el.dataset.view = view;
       el.innerHTML = html;
     } else Dom.morph(el, html);
@@ -480,15 +479,56 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       ri.select();
     }
     if (view === 'today') setupTodayLayout();
+    syncChrome();
     collectLive();
   }
+  /* The active-page highlight slides to the current nav item (vertical in the sidebar, horizontal in the mobile bar). */
   function movePill() {
     const b = $('#tabs button.on'),
       p = $('#pill');
-    if (b) {
-      p.style.width = b.offsetWidth + 'px';
-      p.style.transform = `translateX(${b.offsetLeft}px)`;
-    }
+    if (!b) return;
+    p.style.width = b.offsetWidth + 'px';
+    p.style.height = b.offsetHeight + 'px';
+    p.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
+  }
+
+  /* ---------- Sidebar chrome: breadcrumb, badges, "now working on" card ---------- */
+  const NAV = {
+    today: ['Overview', 'Today'],
+    overview: ['Overview', 'Overview'],
+    commissions: ['Work', 'Commissions'],
+    tasks: ['Work', 'Pending'],
+    clients: ['People', 'Clients']
+  };
+  function setBadge(selector, n) {
+    const el = $(selector);
+    if (!el) return;
+    el.hidden = !n;
+    if (n) el.textContent = n;
+  }
+  function renderSideCard() {
+    const card = $('#sideCard');
+    if (!card) return;
+    const running = state.tasks.find(t => t.startedAt);
+    Dom.morph(
+      card,
+      running
+        ? `<div class="sc-head"><span class="pulse"></span><span class="sc-label">Working on</span></div>
+           <div class="sc-title">${esc(running.title)}</div>
+           <div class="sc-row"><span class="time" data-timer="${running.id}">${clock(G.taskElapsed(running))}</span>
+           <button class="icon live" data-act="pause" data-id="${running.id}" aria-label="Pause timer">${icon('pause')}</button></div>`
+        : `<div class="sc-head"><span class="sc-label">Focus</span></div>
+           <div class="sc-idle">No timer running</div>
+           <button class="sc-link" data-act="goto" data-id="tasks">Open pending</button>`
+    );
+  }
+  function syncChrome() {
+    const [group, label] = NAV[view] || NAV.today;
+    $('#crumbGroup').textContent = group;
+    $('#crumb').textContent = label;
+    setBadge('#badgeTasks', state.tasks.length);
+    setBadge('#badgeComm', state.awaiting.length);
+    renderSideCard();
   }
   function countUp() {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -646,6 +686,11 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
   };
   dlg.addEventListener('click', e => {
     if (e.target === dlg) Dom.closeDialog(dlg);
+  });
+  document.addEventListener('dblclick', e => {
+    if (view !== 'commissions' || e.target.closest('button, a, input, select, textarea')) return;
+    const row = e.target.closest('.commission-history li.item[data-key]');
+    if (row) openDialog(row.dataset.key, 'commission', true);
   });
 
   function toast(msg) {
@@ -1028,11 +1073,6 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
       render(false);
       if (c.dataset.cur === 'INR') refreshRate();
     }
-  });
-  document.addEventListener('dblclick', e => {
-    if (view !== 'commissions' || e.target.closest('button, a, input, select, textarea')) return;
-    const row = e.target.closest('.commission-history li.item[data-key]');
-    if (row) openDialog(row.dataset.key, 'commission', true);
   });
   document.addEventListener('change', e => {
     if (e.target.id === 'overviewRange') {
@@ -1886,14 +1926,12 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           id: 'revB',
           big: true,
           stagger: false,
-          trend: true,
-          trendDots: false,
           maxLabels: Math.floor((W - 62) / 70),
           avg: { value: avg * rate(), tip: `Average · ${money(avg)} per commission` },
           best: top,
           bestTip: `Top earner · ${esc(list[top].name)} · ${money(list[top].price)}`
         }),
-        legend: `<span>${key}Average price</span><span>${dotR}Top earner</span><span><i class="trend-key"></i>Revenue trend</span>`
+        legend: `<span>${key}Average price</span><span>${dotR}Top earner</span>`
       };
     },
     time(w, h) {
@@ -1918,14 +1956,11 @@ if (typeof window !== 'undefined') (window.GLOOM_FILES = window.GLOOM_FILES || {
           id: 'timeB',
           big: true,
           stagger: false,
-          trend: true,
-          trendDots: false,
           maxLabels: Math.floor((W - 62) / 70),
-          avg: { value: average, tip: `Average · ${hours(average * 36e5)} per entry` },
           best: top,
           bestTip: `Longest · ${items[top].tip}`
         }),
-        legend: `<span>${key}Average tracked time</span><span>${dotR}Longest entry</span><span><i class="trend-key"></i>Time trend</span>`
+        legend: `<span>${dotR}Longest entry</span>`
       };
     },
     cnt(w, h) {
